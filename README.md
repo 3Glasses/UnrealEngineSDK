@@ -1,5 +1,5 @@
 # UnrealEngineSDK
-3Glasses SDK Plugins for Unreal Engine 4.12
+3Glasses SDK Plugins for Unreal Engine 4.12 & 4.13
 
 1. Installation
   - Download all the UnrealEngineSDK repository files.
