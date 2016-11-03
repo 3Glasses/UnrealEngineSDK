@@ -7,7 +7,7 @@
   - Copy all the repository files into 'Plugins' folder.
   - Right click your Unreal project *.uproject file, select 'Generate Visual Studio project files'.
   - Open your Unreal Visual Studio solution file *.sln, then build the entire solution.
-  - To add the 3Glasses HMD to driver white list, double click the register file 'whilelist.reg' under the 'Source' folder.
+  - To add the 3Glasses HMD to driver white list, double click the register file 'whilelist.reg' under the 'Source' folder. Then restart your PC.
   - Connect HMD to PC, excute file in 'Source' folder with parameter 'DirectModeD3DD11.exe -enable' under Command Prompt.
   - Make sure all Oculus Plugins is disable in Unreal Plugin configuration page.
   
