@@ -10,7 +10,7 @@ namespace UnrealBuildTool.Rules
 		{
 			PrivateIncludePaths.AddRange(
 				new string[] {
-					"ThreeGlasses/Private",
+					"ThreeGlasses/Private"
 				}
 				);
 
@@ -28,7 +28,8 @@ namespace UnrealBuildTool.Rules
 					"HeadMountedDisplay",
 					"Slate",
 					"SlateCore",
-				}
+                    "D3D11RHI"
+                }
 				);
 
 			if (UEBuildConfiguration.bBuildEditor == true)
@@ -37,17 +38,35 @@ namespace UnrealBuildTool.Rules
 			}
 
             string ThreeGlassesLibPath = ModuleDirectory + "/lib/";
-            // Currently, the ThreeGlasses is only supported on windows 64bits platforms
+            // Currently, the ThreeGlasses is only supported on windows platforms
             if (Target.Platform == UnrealTargetPlatform.Win32 || Target.Platform == UnrealTargetPlatform.Win64)
             {
+                PublicIncludePaths.AddRange(
+                   new string[]
+                   {
+                       "Runtime/Windows/D3D11RHI/Private",
+                       "Runtime/Windows/D3D11RHI/Private/Windows"
+                       // ... add other private include paths required here ...
+                   });
                 PrivateDependencyModuleNames.AddRange(new string[] { "OpenGLDrv", "D3D11RHI" });
+            
                 if (Target.Platform == UnrealTargetPlatform.Win32)
                 {
-                    PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "win32/ThreeGlasses.lib");
+                    PublicLibraryPaths.Add(ThreeGlassesLibPath + "win32");
+                    PublicAdditionalLibraries.Add("ThreeGlasses.lib");
+  
+                    RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "win32/D3D11Present.dll"));
+                    PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x86/d3dx11.lib");
+                    PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x86/d3d11.lib");
                 }
                 else
                 {
-                    PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/ThreeGlasses64.lib");
+                    PublicLibraryPaths.Add(ThreeGlassesLibPath + "x64");
+              
+                    RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/D3D11Present.dll"));
+                    PublicAdditionalLibraries.Add("ThreeGlasses64.lib");
+                    PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3dx11.lib");
+                    PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3d11.lib");
                 }
             }
 		}

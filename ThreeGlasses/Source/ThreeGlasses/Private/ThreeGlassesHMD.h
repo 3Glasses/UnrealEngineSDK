@@ -1,7 +1,13 @@
 // Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
-
 #pragma once
 #include "Engine.h"
+#if PLATFORM_WINDOWS
+#include "AllowWindowsPlatformTypes.h"
+#include <d3d11.h>
+#include "ThirdParty/Windows/DirectX/Include/D3DX11tex.h"
+#include "HideWindowsPlatformTypes.h"
+#endif
+
 #include "IThreeGlassesPlugin.h"
 #include "HeadMountedDisplay.h"
 
@@ -11,7 +17,6 @@
 #include "SceneView.h"
 
 #include "Shader.h"
-
 #include "SZVR_CAPI.h"
 
 #define THREE_GLASSES_SUPPORTED_PLATFORMS (PLATFORM_WINDOWS && WINVER > 0x0502)
@@ -71,10 +76,12 @@ public:
 	virtual FQuat GetBaseOrientation() const override;
 
 	virtual void DrawDistortionMesh_RenderThread(struct FRenderingCompositePassContext& Context, const FIntPoint& TextureSize) override;
-
+	
+	virtual float GetScreenPercentage() const { return 2.0f; }
 	/** IStereoRendering interface */
 	virtual bool IsStereoEnabled() const override;
 	virtual bool EnableStereo(bool stereo = true) override;
+	virtual FVector2D GetTextSafeRegionBounds() const { return FVector2D(1.f, 1.f); }
 	virtual void AdjustViewRect(EStereoscopicPass StereoPass, int32& X, int32& Y, uint32& SizeX, uint32& SizeY) const override;
 	virtual void CalculateStereoViewOffset(const EStereoscopicPass StereoPassType, const FRotator& ViewRotation,
 		const float MetersToWorld, FVector& ViewLocation) override;
@@ -90,11 +97,13 @@ public:
 	virtual void BeginRenderViewFamily(FSceneViewFamily& InViewFamily) {}
 	virtual void PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& InView) override;
 	virtual void PreRenderViewFamily_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& InViewFamily) override;
+	virtual void RenderTexture_RenderThread(class FRHICommandListImmediate& RHICmdList, class FRHITexture2D* BackBuffer, class FRHITexture2D* SrcTexture) const override;
 
 	/**
 	* This method is called when playing begins. Useful to reset all runtime values stored in the plugin.
 	*/
 	virtual void OnBeginPlay(FWorldContext& InWorldContext) override;
+	virtual void OnEndPlay(FWorldContext& InWorldContext) override;
 
 public:
 	/** Constructor */
@@ -109,7 +118,41 @@ public:
 	void UpdateStereoRenderingParams();
 	void ApplySystemOverridesOnStereo(bool force = false);
 	FString GetVersionString() const;
+	virtual void UpdateViewport(bool bUseSeparateRenderTarget, const FViewport& Viewport, class SViewport*) override;
+	bool NeedReAllocateViewportRenderTarget(const FViewport &viewport);
+	virtual bool ShouldUseSeparateRenderTarget() const override
+	{
+		check(IsInGameThread());
+		return IsStereoEnabled();
+	}
+#if PLATFORM_WINDOWS
+	public:
+		const int32 MirrorWidth = 800;
+		const int32 MirrorHeight = 800;
+	FTexture2DRHIRef			       MirrorTexture = NULL;
 
+	bool bDirectMode = false;
+	IDXGISwapChain*							SwapChain = NULL;
+	ID3D11Device*							Device = NULL;
+	ID3D11DeviceContext*					D3DContext = NULL;
+	HWND									MonitorWindow = NULL;
+
+	bool AllocateMirrorTexture();
+	void CopyToMirrorTexture(FRHICommandListImmediate &RHICmdList, const FTextureRHIRef& SrcTexture);
+	void RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const;
+	void InitWindow(HINSTANCE hInst);
+	void MonitorPresent(struct ID3D11Texture2D* tex2d) const;
+	IRendererModule*			   RendererModule = NULL;
+#endif // PLATFORM_WINDOWS
+
+	bool AllocateRenderTargetTexture(
+		uint32 index,
+		uint32 sizeX, uint32 sizeY,
+		uint8 format, uint32 numMips, uint32 flags,
+		uint32 targetableTextureFlags,
+		FTexture2DRHIRef& outTargetableTexture,
+		FTexture2DRHIRef& outShaderResourceTexture,
+		uint32 numSamples);
 
 private:
 	void Startup();
@@ -224,8 +267,6 @@ private:
 
 	float InterpupillaryDistance;
 
-	bool m_bWndSet;
-
 	mutable FQuat			CurHmdOrientation;
 	FQuat DeltaControlOrientation; // same as DeltaControlRotation but as quat
 	FRotator DeltaControlRotation;
@@ -238,7 +279,7 @@ private:
 	FQuat BaseOrientation;	// base orientation
 
 	double					LastSensorTime;
-
+	HANDLE					hThread = 0;
 	FDistortionMesh DistorMesh[2];
 
 	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition);
