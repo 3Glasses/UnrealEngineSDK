@@ -130,9 +130,18 @@ public:
 		const int32 MirrorWidth = 800;
 		const int32 MirrorHeight = 800;
 	FTexture2DRHIRef			       MirrorTexture = NULL;
+
+	bool bDirectMode = false;
+	IDXGISwapChain*							SwapChain = NULL;
+	ID3D11Device*							Device = NULL;
+	ID3D11DeviceContext*					D3DContext = NULL;
+	HWND									MonitorWindow = NULL;
+
 	bool AllocateMirrorTexture();
 	void CopyToMirrorTexture(FRHICommandListImmediate &RHICmdList, const FTextureRHIRef& SrcTexture);
 	void RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const;
+	void InitWindow(HINSTANCE hInst);
+	void MonitorPresent(struct ID3D11Texture2D* tex2d) const;
 	IRendererModule*			   RendererModule = NULL;
 #endif // PLATFORM_WINDOWS
 
