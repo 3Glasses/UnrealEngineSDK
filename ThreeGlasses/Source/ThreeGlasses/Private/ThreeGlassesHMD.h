@@ -126,16 +126,15 @@ public:
 		return IsStereoEnabled();
 	}
 #if PLATFORM_WINDOWS
-	public:
-		const int32 MirrorWidth = 800;
-		const int32 MirrorHeight = 800;
-	FTexture2DRHIRef			       MirrorTexture = NULL;
+public:
+	FTexture2DRHIRef			            MirrorTexture = NULL;
 
 	bool bDirectMode = false;
 	IDXGISwapChain*							SwapChain = NULL;
 	ID3D11Device*							Device = NULL;
 	ID3D11DeviceContext*					D3DContext = NULL;
 	HWND									MonitorWindow = NULL;
+	int										DxgiFormat;
 
 	bool AllocateMirrorTexture();
 	void CopyToMirrorTexture(FRHICommandListImmediate &RHICmdList, const FTextureRHIRef& SrcTexture);
@@ -179,16 +178,15 @@ private:
 
 	struct FDistortionMesh
 	{
-		DistMeshVert*				pVertices;
 		FDistortionVertex*			pVerticesCached;
 		int*						pIndices;
 		int							NumVertices;
 		int							NumIndices;
 		int							NumTriangles;
 
-		FDistortionMesh() :pVertices(nullptr), pIndices(nullptr), NumVertices(0), NumIndices(0), NumTriangles(0) {}
+		FDistortionMesh() : pIndices(nullptr), NumVertices(0), NumIndices(0), NumTriangles(0) {}
 		~FDistortionMesh() { Clear(); }
-		void Clear() { delete pVertices; delete pIndices; NumVertices = NumIndices = NumTriangles = 0; }
+		void Clear() {  delete pIndices; NumVertices = NumIndices = NumTriangles = 0; }
 	};
 
 	typedef uint64 bool64;
