@@ -99,8 +99,8 @@ bool FThreeGlassesHMD::GetHMDMonitorInfo(MonitorInfo& MonitorDesc)
 		MonitorDesc.WindowSizeX = MonitorDesc.WindowSizeY = 0;
 	}
 
-	MonitorDesc.ResolutionX = 2880;
-	MonitorDesc.ResolutionY = 1440;
+	MonitorDesc.ResolutionX = HMDResX;
+	MonitorDesc.ResolutionY = HMDResY;
 	return false;
 }
 
@@ -383,11 +383,6 @@ void GetMash( TArray<FVector>& vertices, TArray<uint16>& indices, uint32_t GirdN
 
 void FThreeGlassesHMD::UpdateStereoRenderingParams()
 {
-	// If we've manually overridden stereo rendering params for debugging, don't mess with them
-	if (Flags.bOverrideStereo || !IsStereoEnabled() )
-	{
-		return;
-	}
 	if (IsInitialized() && Hmd)
 	{
 		TArray<FVector> vertices;
@@ -547,21 +542,19 @@ void FThreeGlassesHMD::DrawDebug(UCanvas* Canvas)
 
 bool FThreeGlassesHMD::IsStereoEnabled() const
 {
-	return true;
+	return Flags.bStereoEnabled && Flags.bHMDEnabled;
 }
 
 bool FThreeGlassesHMD::EnableStereo(bool stereo)
 {
-	Flags.bStereoEnabled = (IsHMDEnabled()) ? stereo : false;
-	//FSystemResolution::RequestResolutionChange(2880, 1440, EWindowMode::Windowed);
+	bool NewEnable = (IsHMDEnabled()) ? stereo : false;
+	if (Flags.bStereoEnabled == NewEnable)
+		return Flags.bStereoEnabled;
 
-	int32 width = 2880;
-	int32 height = 1440;
-
+	Flags.bStereoEnabled = NewEnable;
 	FSceneViewport* sceneViewport;
 	if (!GIsEditor)
 	{
-		//UE_LOG(OSVRHMDLog, Warning, TEXT("OSVR getting UGameEngine::SceneViewport viewport"));
 		UGameEngine* gameEngine = Cast<UGameEngine>(GEngine);
 		sceneViewport = gameEngine->SceneViewport.Get();
 	}
@@ -586,21 +579,26 @@ bool FThreeGlassesHMD::EnableStereo(bool stereo)
 	{
 		return false;
 	}
+
+	if (Flags.bStereoEnabled)
+	{
+		auto window = sceneViewport->FindWindow();
+
+		sceneViewport->SetViewportSize(HMDResX, HMDResY);
+		if (window.IsValid())
+		{
+			window->SetViewportSizeDrivenByWindow(false);
+			window->FlashWindow();
+		}
+	}
 	else
 	{
-		//UE_LOG(OSVRHMDLog, Warning, TEXT("OSVR scene viewport exists"));
-//#if !WITH_EDITOR
-//		auto window = sceneViewport->FindWindow();
-//#endif
-		if (stereo)
+		sceneViewport->SetViewportSize(GSystemResolution.ResX, GSystemResolution.ResY);
+		auto window = sceneViewport->FindWindow();
+	
+		if (window.IsValid())
 		{
-			sceneViewport->SetViewportSize(width, height);
-//#if !WITH_EDITOR
-//			if (window.IsValid())
-//			{
-//				window->SetViewportSizeDrivenByWindow(false);
-//			}
-//#endif
+			window->SetViewportSizeDrivenByWindow(true);
 		}
 	}
 
@@ -609,13 +607,8 @@ bool FThreeGlassesHMD::EnableStereo(bool stereo)
 
 void FThreeGlassesHMD::AdjustViewRect(EStereoscopicPass StereoPass, int32& X, int32& Y, uint32& SizeX, uint32& SizeY) const
 {
-	int PosX = 0, PosY =0, Width=2880, Height=1440;
-	/*if (SZVR_GetHmdMonitor(&PosX, &PosY, &Width, &Height))
-	{
-		SizeX = Width; SizeY = Height;
-	}*/
-	SizeX = 2880;
-	SizeY = 1440;
+	SizeX = HMDResX;
+	SizeY = HMDResY;
 	SizeX = SizeX / 2;
 	if (StereoPass == eSSP_RIGHT_EYE)
 	{
@@ -655,11 +648,12 @@ void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
 
 void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const
 {
-	const uint32 viewportWidth = MirrorTexture->GetSizeX();
-	const uint32 viewportHeight = MirrorTexture->GetSizeY();
+	const int viewportWidth = GSystemResolution.ResY;
+	const int viewportHeight = GSystemResolution.ResY;
 
 	SetRenderTarget(rhiCmdList, backBuffer, FTextureRHIRef());
-	uint32 offset = (GSystemResolution.ResX - viewportWidth) / 2;
+	rhiCmdList.Clear(true, FLinearColor(0.0f, 0.0f, 0.0f, 1.0f), false, 0.0f, false, 0, FIntRect(0, 0, 0, 0));
+	uint32 offset = FMath::Max(GSystemResolution.ResX - viewportWidth,0) / 2;
 	rhiCmdList.SetViewport(offset, 0, 0, viewportWidth + offset, viewportHeight, 1.0f);
 
 	rhiCmdList.SetBlendState(TStaticBlendState<>::GetRHI());
@@ -740,30 +734,6 @@ void FThreeGlassesHMD::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InV
 	NearClippingPlane = Hmd->CameraFrustumNearZInMeters * WorldToMetersScale;
 	FarClippingPlane = Hmd->CameraFrustumFarZInMeters * WorldToMetersScale;
 	InViewFamily.bUseSeparateRenderTarget = ShouldUseSeparateRenderTarget();
-
-//	RECT WindowRect;
-//	ZeroMemory(&WindowRect, sizeof(WindowRect));
-//	WindowRect.left = (GetSystemMetrics(SM_CXSCREEN) - MirrorWidth) / 2;
-//	WindowRect.top = (GetSystemMetrics(SM_CYSCREEN) - MirrorHeight) / 2;
-//	WindowRect.right = WindowRect.left + MirrorWidth;
-//	WindowRect.bottom = WindowRect.top + MirrorHeight;
-//	FVector2D WindowPosition = FVector2D((float)WindowRect.left, (float)WindowRect.top);
-//	FVector2D WindowSize = FVector2D((float)MirrorWidth, (float)MirrorHeight);
-//	auto Wnd = GEngine->GameViewport->GetWindow();
-//	if (Wnd->GetViewportSize()!= WindowSize)
-//	{
-//		//if (!GIsEditor)
-//		//{
-//		//	//UE_LOG(OSVRHMDLog, Warning, TEXT("OSVR getting UGameEngine::SceneViewport viewport"));
-//		//	UGameEngine* gameEngine = Cast<UGameEngine>(GEngine);
-//		//	FSceneViewport* sceneViewport = gameEngine->SceneViewport.Get();
-//		//	sceneViewport->SetViewportSize(MirrorWidth,MirrorHeight);
-//		//}
-//		Wnd->MoveWindowTo(WindowPosition);
-//		Wnd->Resize(WindowSize);
-//		Wnd->SetWindowMode(EWindowMode::Windowed);
-//		Wnd->SetViewportSizeDrivenByWindow(true);
-//	}
 }
 
 void FThreeGlassesHMD::OnBeginPlay(FWorldContext& InWorldContext)
@@ -792,22 +762,7 @@ void FThreeGlassesHMD::Startup()
 	GEngine->bSmoothFrameRate = false;
 	static IConsoleVariable* CVSyncVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync"));
 	CVSyncVar->Set(true);
-
-	//for (int eyeIndex = szvrEye_Left; eyeIndex < szvrEye_Count; ++eyeIndex)
-	//{
-	//	SZVR_GenerateDistortionMesh(&(DistorMesh[eyeIndex].NumVertices), &(DistorMesh[eyeIndex].NumIndices), eyeIndex == szvrEye_Right);
-	//	DistorMesh[eyeIndex].NumTriangles = DistorMesh[eyeIndex].NumIndices / 3;
-	//	DistorMesh[eyeIndex].pIndices = new int[DistorMesh[eyeIndex].NumIndices];
-
-	//	FMemory::Memzero(DistorMesh[eyeIndex].pIndices, DistorMesh[eyeIndex].NumIndices * sizeof(int));
-	//	DistorMesh[eyeIndex].pVertices = new DistMeshVert[DistorMesh[eyeIndex].NumVertices];
-	//	DistorMesh[eyeIndex].pVerticesCached = new FDistortionVertex[DistorMesh[eyeIndex].NumVertices];
-
-	//	FMemory::Memzero(DistorMesh[eyeIndex].pVertices, DistorMesh[eyeIndex].NumVertices * sizeof(DistMeshVert));
-	//	FMemory::Memzero(DistorMesh[eyeIndex].pVerticesCached, DistorMesh[eyeIndex].NumVertices * sizeof(FDistortionVertex));
-	//}
-
-#if PLATFORM_WINDOWS
+	
 	if (IsPCPlatform(GMaxRHIShaderPlatform) && !IsOpenGLPlatform(GMaxRHIShaderPlatform))
 	{
 		if (bDirectMode)
@@ -849,10 +804,8 @@ void FThreeGlassesHMD::Startup()
 		if(!bDirectMode)
 		{
 			InitWindow(GetModuleHandle(NULL));
-			DxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 	}
-#endif
 }
 
 void FThreeGlassesHMD::Shutdown()
@@ -909,8 +862,15 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	Hmd = pHmd;
 
 	SZVR_GetInterpupillaryDistance(&InterpupillaryDistance);
-	HFOVInRadians = PI*110.f/360.f;// Hmd->CameraFrustumHFovInRadians;
-	VFOVInRadians = PI*110.f /360.f;// Hmd->CameraFrustumVFovInRadians;
+	HFOVInRadians = PI*90.f/360.f;// Hmd->CameraFrustumHFovInRadians;
+	VFOVInRadians = PI*90.f/360.f;// Hmd->CameraFrustumVFovInRadians;
+
+	int PosX = 0, PosY = 0, Width = 0, Height = 0;
+	if (SZVR_GetHmdMonitor(&PosX, &PosY, &Width, &Height))
+	{
+		HMDResX = Width; HMDResY = Height;
+	}
+
 	Startup();
 	InitDevice();
 }
@@ -947,8 +907,8 @@ bool FThreeGlassesHMD::IsHMDConnected()
 void FThreeGlassesHMD::CalculateRenderTargetSize(const class FViewport& Viewport, uint32& InOutSizeX, uint32& InOutSizeY)
 {
 	check(IsInGameThread());
-	InOutSizeX = 2880;
-	InOutSizeY = 1440;
+	InOutSizeX = HMDResX;
+	InOutSizeY = HMDResY;
 	//SZVR_Get3GlassesResolution((char*)&InOutSizeX, (char*)&InOutSizeY);
 }
 
@@ -963,8 +923,8 @@ bool FThreeGlassesHMD::AllocateMirrorTexture()
 
 	D3D11_TEXTURE2D_DESC textureDesc;
 	memset(&textureDesc, 0, sizeof(textureDesc));
-	textureDesc.Width = GSystemResolution.ResY;
-	textureDesc.Height = GSystemResolution.ResY;
+	textureDesc.Width = 800;
+	textureDesc.Height = 800;
 	textureDesc.MipLevels = 1;
 	textureDesc.ArraySize = 1;
 	textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -1194,8 +1154,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, uint32 message, WPARAM wParam, LPARAM lParam
 
 void FThreeGlassesHMD::InitWindow(HINSTANCE hInst)
 {
-	int Width = 2880;
-	int Height = 1440;
+	int Width = HMDResX;
+	int Height = HMDResY;
 	int X = 0, Y = 0;
 	SZVR_GetHmdMonitor(&X, &Y, &Width, &Height);
 	HINSTANCE HInstance = hInst;
@@ -1231,7 +1191,7 @@ void FThreeGlassesHMD::InitWindow(HINSTANCE hInst)
 		NULL, NULL, HInstance, NULL);
 
 	SetWindowLong(MonitorWindow, GWL_EXSTYLE, GetWindowLong(MonitorWindow, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-
+	//ShowWindow(MonitorWindow, SW_HIDE);
 	uint32 createDeviceFlags = 0;
 #ifdef _DEBUG
 	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;

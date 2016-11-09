@@ -19,7 +19,7 @@
 #include "Shader.h"
 #include "SZVR_CAPI.h"
 
-#define THREE_GLASSES_SUPPORTED_PLATFORMS (PLATFORM_WINDOWS && WINVER > 0x0502)
+#define THREE_GLASSES_SUPPORTED_PLATFORMS 1//(PLATFORM_WINDOWS && WINVER > 0x0502)
 #if THREE_GLASSES_SUPPORTED_PLATFORMS
 
 class FThreeGlassesHMD : public IHeadMountedDisplay, public ISceneViewExtension, public TSharedFromThis < FThreeGlassesHMD, ESPMode::ThreadSafe >
@@ -125,24 +125,24 @@ public:
 		check(IsInGameThread());
 		return IsStereoEnabled();
 	}
-#if PLATFORM_WINDOWS
+
 public:
 	FTexture2DRHIRef			            MirrorTexture = NULL;
-
-	bool bDirectMode = false;
+	int32									HMDResX = 2880;
+	int32									HMDResY = 1440;
+	bool									bDirectMode = false;
 	IDXGISwapChain*							SwapChain = NULL;
 	ID3D11Device*							Device = NULL;
 	ID3D11DeviceContext*					D3DContext = NULL;
 	HWND									MonitorWindow = NULL;
-	int										DxgiFormat;
+	int										DxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	bool AllocateMirrorTexture();
 	void CopyToMirrorTexture(FRHICommandListImmediate &RHICmdList, const FTextureRHIRef& SrcTexture);
 	void RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const;
 	void InitWindow(HINSTANCE hInst);
 	void MonitorPresent(struct ID3D11Texture2D* tex2d) const;
-	IRendererModule*			   RendererModule = NULL;
-#endif // PLATFORM_WINDOWS
+	IRendererModule*						RendererModule = NULL;
 
 	bool AllocateRenderTargetTexture(
 		uint32 index,
