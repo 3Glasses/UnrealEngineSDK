@@ -5,6 +5,8 @@
 #include "AllowWindowsPlatformTypes.h"
 #include <d3d11.h>
 #include "ThirdParty/Windows/DirectX/Include/D3DX11tex.h"
+#include "SZVRMEMAPI.h"
+#include "SZVRDeviceInfo.h"
 #include "HideWindowsPlatformTypes.h"
 #endif
 
@@ -17,7 +19,6 @@
 #include "SceneView.h"
 
 #include "Shader.h"
-#include "SZVR_CAPI.h"
 
 #define THREE_GLASSES_SUPPORTED_PLATFORMS 1//(PLATFORM_WINDOWS && WINVER > 0x0502)
 #if THREE_GLASSES_SUPPORTED_PLATFORMS
@@ -128,6 +129,8 @@ public:
 
 public:
 	FTexture2DRHIRef			            MirrorTexture = NULL;
+	int32									HMDDesktopX = 0;
+	int32									HMDDesktopY = 0;
 	int32									HMDResX = 2880;
 	int32									HMDResY = 1440;
 	bool									bDirectMode = false;
@@ -252,26 +255,19 @@ private:
 		uint64 Raw;
 	} Flags;
 
-	const szvrHeadDisplayDevice * Hmd;
-
-	float NearClippingPlane;
-	float FarClippingPlane;
-
 	float WorldToMetersScale;
 	float ScreenPercentage;
+
+	FQuat	LastOrientation = {0,0,0,1};
+	FVector LastPosition = {0,0,0};
 
 	float HFOVInRadians; // horizontal
 	float VFOVInRadians; // vertical
 
 	float InterpupillaryDistance;
 
-	mutable FQuat			CurHmdOrientation;
 	FQuat DeltaControlOrientation; // same as DeltaControlRotation but as quat
 	FRotator DeltaControlRotation;
-
-	mutable FVector			CurHmdPosition;
-	FQuat LastHmdOrientation; // contains last APPLIED ON GT HMD orientation
-	FVector LastHmdPosition;
 
 	// HMD base values, specify forward orientation and zero pos offset
 	FQuat BaseOrientation;	// base orientation
@@ -282,15 +278,4 @@ private:
 
 	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition);
 };
-
-FORCEINLINE FMatrix ToFMatrix(const szvrMatrix4f& vtm)
-{
-	// Rows and columns are swapped between OVR::Matrix4f and FMatrix
-	return FMatrix(
-		FPlane(vtm.M[0][0], vtm.M[1][0], vtm.M[2][0], vtm.M[3][0]),
-		FPlane(vtm.M[0][1], vtm.M[1][1], vtm.M[2][1], vtm.M[3][1]),
-		FPlane(vtm.M[0][2], vtm.M[1][2], vtm.M[2][2], vtm.M[3][2]),
-		FPlane(vtm.M[0][3], vtm.M[1][3], vtm.M[2][3], vtm.M[3][3]));
-}
-
 #endif //THREE_GLASSES_SUPPORTED_PLATFORMS
