@@ -6,7 +6,7 @@
 #include "Runtime/InputDevice/Public/IHapticDevice.h"
 #include "IMotionController.h"
 #include "AllowWindowsPlatformTypes.h"
-#include "SZVRMEMAPI.h"
+#include "SZVR_MEMAPI.h"
 #include "HideWindowsPlatformTypes.h"
 
 #define LOCTEXT_NAMESPACE "FThreeGlassesInputModule"
@@ -42,23 +42,28 @@ public:
 	{
 		FQuat DeviceOrientation = FQuat::Identity;
 		float PosData[6] = {0};
-		SZVR_MEMORY_API::GetWandPos(PosData);
+		SZVR_GetWandPos(PosData);
 		float RotData[8] = {0};
-		SZVR_MEMORY_API::GetWandRotate(RotData);
+		SZVR_GetWandRotate(RotData);
 
 		if (DeviceHand == EControllerHand::Left)
 		{
-			DeviceOrientation = FQuat(RotData[0], RotData[1], -RotData[2], RotData[3]);
-			OutPosition = FVector(PosData[0], PosData[1], PosData[2]);
+			DeviceOrientation = FQuat(RotData[2], -RotData[1], RotData[0], RotData[3]);
+			OutPosition = FVector(-PosData[2],-PosData[0], -PosData[1])*0.1f;
 		}
 		else if (DeviceHand == EControllerHand::Right)
 		{
-			DeviceOrientation = FQuat( RotData[4],RotData[5],-RotData[6],RotData[7]);
-			OutPosition = FVector(PosData[3], PosData[4], PosData[5]);
+			DeviceOrientation = FQuat(RotData[6], -RotData[5], RotData[4], RotData[7]);
+			OutPosition = FVector(-PosData[5],-PosData[3], -PosData[4])*0.1f;
 		}
 
-		OutOrientation = DeviceOrientation.Rotator();
+		if (DeviceOrientation.SizeSquared()==0)
+		{
+			DeviceOrientation = FQuat::Identity;
+		}
 
+		DeviceOrientation = FQuat(FVector(0, 0, 1), -0.5f*PI) * DeviceOrientation;
+		OutOrientation = DeviceOrientation.Rotator();
 		return true;
 	}
 
@@ -105,18 +110,18 @@ public:
 			FGamepadKeyNames::MotionController_Left_Shoulder,
 			FGamepadKeyNames::MotionController_Left_Grip1,
 			FGamepadKeyNames::MotionController_Left_Grip2,
-			FGamepadKeyNames::Invalid,
+			FGamepadKeyNames::MotionController_Left_Thumbstick,
 			FGamepadKeyNames::MotionController_Left_Trigger,
 			FGamepadKeyNames::SpecialRight,
 			FGamepadKeyNames::MotionController_Right_Shoulder,
 			FGamepadKeyNames::MotionController_Right_Grip1,
 			FGamepadKeyNames::MotionController_Right_Grip2,
-			FGamepadKeyNames::Invalid,
+			FGamepadKeyNames::MotionController_Left_Thumbstick,
 			FGamepadKeyNames::MotionController_Right_Trigger,
 		};
 
 		bool Button[ButtonNum] = {0};
-		if (SZVR_MEMORY_API::GetWandButton(Button))
+		if (SZVR_GetWandButton(Button))
 		{
 			for (int i = 0; i < ButtonNum; i++)
 			{
@@ -137,7 +142,7 @@ public:
 		}
 
 		uint8 Axis[4] = {0};
-		if (SZVR_MEMORY_API::GetWandStick(Axis))
+		if (SZVR_GetWandStick(Axis))
 		{
 			FName ThumbstickKeyNames[4] = {
 				FGamepadKeyNames::MotionController_Left_Thumbstick_X,
@@ -158,7 +163,7 @@ public:
 		}
 
 		uint8 TriggerAxis[2];
-		if (SZVR_MEMORY_API::GetWandTriggerProcess(TriggerAxis))
+		if (SZVR_GetWandTriggerProcess(TriggerAxis))
 		{
 			if (TriggerState[0] != TriggerAxis[0])
 			{

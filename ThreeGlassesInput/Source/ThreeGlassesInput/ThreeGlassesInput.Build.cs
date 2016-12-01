@@ -59,9 +59,11 @@ public class ThreeGlassesInput : ModuleRules
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
-		
-		
-		DynamicallyLoadedModuleNames.AddRange(
+
+        PublicLibraryPaths.Add(ModuleDirectory + "/lib/");
+        PublicAdditionalLibraries.Add("SZVR_MEMAPI.lib");
+
+        DynamicallyLoadedModuleNames.AddRange(
 			new string[]
 			{
 				// ... add any modules that your module loads dynamically here ...

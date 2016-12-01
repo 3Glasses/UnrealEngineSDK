@@ -5,8 +5,7 @@
 #include "AllowWindowsPlatformTypes.h"
 #include <d3d11.h>
 #include "ThirdParty/Windows/DirectX/Include/D3DX11tex.h"
-#include "SZVRMEMAPI.h"
-#include "SZVRDeviceInfo.h"
+#include "SZVR_MEMAPI.h"
 #include "HideWindowsPlatformTypes.h"
 #endif
 
@@ -106,6 +105,8 @@ public:
 	virtual void OnBeginPlay(FWorldContext& InWorldContext) override;
 	virtual void OnEndPlay(FWorldContext& InWorldContext) override;
 
+	void SetMotionPredictionFactor(bool bPredictionOn, bool bOpenVsync, float scale, int maxFps);
+	void SetStereoEffectParam(float fov, float gazePlane);
 public:
 	/** Constructor */
 	FThreeGlassesHMD();
@@ -261,10 +262,18 @@ private:
 	FQuat	LastOrientation = {0,0,0,1};
 	FVector LastPosition = {0,0,0};
 
-	float HFOVInRadians; // horizontal
-	float VFOVInRadians; // vertical
+	//float HFOVInRadians; // horizontal
+	//float VFOVInRadians; // vertical
 
 	float InterpupillaryDistance;
+
+	float MotionPredictionFactor;
+	float AspectRatio;
+	float HFOV;
+	float GazePlane;
+
+	bool bVsyncOn;
+	bool bIsMotionPredictionOn;
 
 	FQuat DeltaControlOrientation; // same as DeltaControlRotation but as quat
 	FRotator DeltaControlRotation;
@@ -277,5 +286,6 @@ private:
 	FDistortionMesh DistorMesh[2];
 
 	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition);
+	void SetVsync(bool bOpenVsync, float maxFps);
 };
 #endif //THREE_GLASSES_SUPPORTED_PLATFORMS
