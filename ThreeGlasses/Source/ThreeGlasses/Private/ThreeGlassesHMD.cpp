@@ -21,7 +21,7 @@ class FThreeGlassesPlugin : public IThreeGlassesPlugin
 	/** IHeadMountedDisplayModule implementation */
 	virtual TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > CreateHeadMountedDisplay() override;
 
-	FString GetModulePriorityKeyName() const
+	FString GetModuleKeyName() const
 	{
 		return FString(TEXT("ThreeGlasses"));
 	}
@@ -641,7 +641,8 @@ void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& 
 	const int viewportHeight = backBuffer->GetSizeY();
 
 	SetRenderTarget(rhiCmdList, backBuffer, FTextureRHIRef());
-	rhiCmdList.Clear(true, FLinearColor(0.0f, 0.0f, 0.0f, 1.0f), false, 0.0f, false, 0, FIntRect(0, 0, 0, 0));
+	FTextureRHIParamRef targets[1] = { backBuffer };
+	rhiCmdList.ClearColorTextures(1, targets, &FLinearColor::Black,FIntRect());
 	uint32 offset = FMath::Max((int)backBuffer->GetSizeX() - viewportWidth, 0) / 2;
 	rhiCmdList.SetViewport(offset, 0, 0, viewportWidth + offset, viewportHeight, 1.0f);
 

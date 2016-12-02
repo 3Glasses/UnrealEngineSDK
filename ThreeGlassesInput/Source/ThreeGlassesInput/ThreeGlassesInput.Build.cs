@@ -39,7 +39,7 @@ public class ThreeGlassesInput : ModuleRules
                 "Engine",
     //            "InputCore",        // Provides LOCTEXT and other Input features
 				//"InputDevice",      // Provides IInputInterface
-    //            "HeadMountedDisplay",
+                "HeadMountedDisplay",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -52,7 +52,7 @@ public class ThreeGlassesInput : ModuleRules
 				"Engine",
     //            "InputCore",        // Provides LOCTEXT and other Input features
 				//"InputDevice",      // Provides IInputInterface
-    //            "HeadMountedDisplay",
+                "HeadMountedDisplay",
                 "Slate",
 				"SlateCore",
        

@@ -62,7 +62,7 @@ public:
 			DeviceOrientation = FQuat::Identity;
 		}
 
-		DeviceOrientation = FQuat(FVector(0, 0, 1), -0.5f*PI) * DeviceOrientation;
+		DeviceOrientation = DeviceOrientation*FQuat(FVector(0, 0, 1), -0.5f*PI);
 		OutOrientation = DeviceOrientation.Rotator();
 		return true;
 	}
@@ -110,14 +110,14 @@ public:
 			FGamepadKeyNames::MotionController_Left_Shoulder,
 			FGamepadKeyNames::MotionController_Left_Grip1,
 			FGamepadKeyNames::MotionController_Left_Grip2,
-			FGamepadKeyNames::MotionController_Left_Thumbstick,
 			FGamepadKeyNames::MotionController_Left_Trigger,
+			FGamepadKeyNames::MotionController_Left_Thumbstick,
 			FGamepadKeyNames::SpecialRight,
 			FGamepadKeyNames::MotionController_Right_Shoulder,
 			FGamepadKeyNames::MotionController_Right_Grip1,
 			FGamepadKeyNames::MotionController_Right_Grip2,
-			FGamepadKeyNames::MotionController_Left_Thumbstick,
 			FGamepadKeyNames::MotionController_Right_Trigger,
+			FGamepadKeyNames::MotionController_Right_Thumbstick,
 		};
 
 		bool Button[ButtonNum] = {0};
