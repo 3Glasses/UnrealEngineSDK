@@ -41,28 +41,31 @@ public:
 	virtual bool GetControllerOrientationAndPosition(const int32 ControllerIndex, const EControllerHand DeviceHand, FRotator& OutOrientation, FVector& OutPosition) const
 	{
 		FQuat DeviceOrientation = FQuat::Identity;
-		float PosData[6] = {0};
+		float PosData[6] = { 0 };
 		SZVR_GetWandPos(PosData);
-		float RotData[8] = {0};
+		float RotData[8] = { 0 };
 		SZVR_GetWandRotate(RotData);
 
-		if (DeviceHand == EControllerHand::Left)
+		switch (DeviceHand)
 		{
-			DeviceOrientation = FQuat(RotData[2], -RotData[1], RotData[0], RotData[3]);
-			OutPosition = FVector(-PosData[2],-PosData[0], -PosData[1])*0.1f;
-		}
-		else if (DeviceHand == EControllerHand::Right)
-		{
-			DeviceOrientation = FQuat(RotData[6], -RotData[5], RotData[4], RotData[7]);
-			OutPosition = FVector(-PosData[5],-PosData[3], -PosData[4])*0.1f;
+		case EControllerHand::Left:
+			DeviceOrientation = FQuat(RotData[0], RotData[1], RotData[2], RotData[3]);
+			OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4])*0.1f;
+			break;
+		case EControllerHand::Right:
+			DeviceOrientation = FQuat(RotData[4], RotData[5], RotData[6], RotData[7]);
+			OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1])*0.1f;
+			break;
+		default:
+			return false;
 		}
 
-		if (DeviceOrientation.SizeSquared()==0)
+		if (DeviceOrientation.W == 0)
 		{
 			DeviceOrientation = FQuat::Identity;
 		}
 
-		DeviceOrientation = DeviceOrientation*FQuat(FVector(0, 0, 1), -0.5f*PI);
+		DeviceOrientation = FQuat(-DeviceOrientation.Z, -DeviceOrientation.X, DeviceOrientation.Y, DeviceOrientation.W);// *FQuat(FVector(0, 1, 0), PI)*FQuat(FVector(1, 0, 0), PI);
 		OutOrientation = DeviceOrientation.Rotator();
 		return true;
 	}
@@ -104,7 +107,7 @@ public:
 
 	virtual void SendControllerEvents() override
 	{
-		FName KeyNames[ButtonNum]=
+		FName KeyNames[ButtonNum] =
 		{
 			FGamepadKeyNames::SpecialLeft,
 			FGamepadKeyNames::MotionController_Left_Shoulder,
@@ -120,7 +123,7 @@ public:
 			FGamepadKeyNames::MotionController_Right_Thumbstick,
 		};
 
-		bool Button[ButtonNum] = {0};
+		bool Button[ButtonNum] = { 0 };
 		if (SZVR_GetWandButton(Button))
 		{
 			for (int i = 0; i < ButtonNum; i++)
@@ -141,7 +144,7 @@ public:
 			}
 		}
 
-		uint8 Axis[4] = {0};
+		uint8 Axis[4] = { 0 };
 		if (SZVR_GetWandStick(Axis))
 		{
 			FName ThumbstickKeyNames[4] = {
@@ -151,7 +154,7 @@ public:
 				FGamepadKeyNames::MotionController_Right_Thumbstick_Y
 			};
 
-			for (int i=0; i<4; i++)
+			for (int i = 0; i < 4; i++)
 			{
 				if (Axis[i] != AxisState[i])
 				{
@@ -167,10 +170,10 @@ public:
 		{
 			if (TriggerState[0] != TriggerAxis[0])
 			{
-				MessageHandler->OnControllerAnalog(FGamepadKeyNames::MotionController_Left_TriggerAxis, 0, float(TriggerAxis[0])/255.0f);
+				MessageHandler->OnControllerAnalog(FGamepadKeyNames::MotionController_Left_TriggerAxis, 0, float(TriggerAxis[0]) / 255.0f);
 				TriggerState[0] = TriggerAxis[0];
 			}
-				
+
 			if (TriggerState[1] != TriggerAxis[1])
 			{
 				MessageHandler->OnControllerAnalog(FGamepadKeyNames::MotionController_Right_TriggerAxis, 0, float(TriggerAxis[1]) / 255.0f);
@@ -180,11 +183,11 @@ public:
 	}
 };
 
-TSharedPtr< class IInputDevice > FThreeGlassesInputModule::CreateInputDevice(const TSharedRef< FGenericApplicationMessageHandler >& InMessageHandler) 
+TSharedPtr< class IInputDevice > FThreeGlassesInputModule::CreateInputDevice(const TSharedRef< FGenericApplicationMessageHandler >& InMessageHandler)
 {
 	return TSharedPtr< class IInputDevice >(new F3GlassesController(InMessageHandler));
 }
 #undef LOCTEXT_NAMESPACE
-	
+
 IMPLEMENT_MODULE(FThreeGlassesInputModule, ThreeGlassesInput)
 

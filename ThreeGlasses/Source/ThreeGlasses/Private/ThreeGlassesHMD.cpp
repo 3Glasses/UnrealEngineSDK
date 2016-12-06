@@ -1,5 +1,6 @@
 ﻿#include "ThreeGlassesHMD.h"
 
+#include "Runtime/Launch/Resources/Version.h"
 #include "Runtime/Renderer/Private/RendererPrivate.h"
 #include "Runtime/Renderer/Private/ScenePrivate.h"
 #include "Runtime/RenderCore/Public/RenderUtils.h"
@@ -14,6 +15,8 @@
 #include "Editor/UnrealEd/Classes/Editor/EditorEngine.h"
 #endif
 
+#pragma warning(disable : 4191)
+
 #if THREE_GLASSES_SUPPORTED_PLATFORMS
 
 class FThreeGlassesPlugin : public IThreeGlassesPlugin
@@ -21,7 +24,11 @@ class FThreeGlassesPlugin : public IThreeGlassesPlugin
 	/** IHeadMountedDisplayModule implementation */
 	virtual TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > CreateHeadMountedDisplay() override;
 
-	FString GetModuleKeyName() const
+#if ENGINE_MINOR_VERSION >= 14
+	virtual FString GetModuleKeyName() const
+#else
+	virtual FString GetModulePriorityKeyName() const
+#endif
 	{
 		return FString(TEXT("ThreeGlasses"));
 	}
@@ -30,9 +37,9 @@ public:
 
 };
 
-typedef bool(*InitDirectModeFunc)(char* ErrorMsg, int msgLength, int &SurfaceFormat);
-typedef void(*DirectModePresentFunc)(struct ID3D11Texture2D* srcTexture);
-typedef void(*ClearDirectModeFunc)();
+typedef bool(WINAPI * InitDirectModeFunc)(char* ErrorMsg, int msgLength, int &SurfaceFormat);
+typedef void(WINAPI * DirectModePresentFunc)(struct ID3D11Texture2D* srcTexture);
+typedef void(WINAPI * ClearDirectModeFunc)();
 InitDirectModeFunc InitDirectMode = NULL;
 DirectModePresentFunc DirectModePresent = NULL;
 ClearDirectModeFunc ClearDirectMode = NULL;
@@ -134,11 +141,12 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 				LastOrientation = quat;
 			}
 		}
-		
-		FVector loc(0,0,0);
+
+		FVector loc(0, 0, 0);
 		if (SZVR_GetHMDPos(&loc.X))
 		{
 			LastPosition = FVector(-loc.Z, loc.X, loc.Y)*0.1f;
+			LastPosition = ClampVector(LastPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
 		}
 		CurrentHmdPosition = LastPosition;
 		CurrentHmdOrientation = LastOrientation;
@@ -176,19 +184,6 @@ void FThreeGlassesHMD::ApplyHmdRotation(APlayerController* PC, FRotator& ViewRot
 
 	ViewRotation = FRotator(DeltaControlOrientation * CurHmdOrientation);
 }
-
-#if __UESDK_4_10__
-void FThreeGlassesHMD::UpdatePlayerCameraRotation(APlayerCameraManager* Camera, struct FMinimalViewInfo& POV)
-{
-	GetCurrentPose(CurHmdOrientation, CurHmdPosition);
-
-	DeltaControlRotation = POV.Rotation;
-	DeltaControlOrientation = DeltaControlRotation.Quaternion();
-
-	// Apply HMD orientation to camera rotation.
-	POV.Rotation = FRotator(POV.Rotation.Quaternion() * CurHmdOrientation);
-}
-#endif
 
 bool FThreeGlassesHMD::UpdatePlayerCamera(FQuat& CurrentOrientation, FVector& CurrentPosition)
 {
@@ -640,9 +635,12 @@ void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& 
 	const int viewportWidth = backBuffer->GetSizeY();
 	const int viewportHeight = backBuffer->GetSizeY();
 
-	SetRenderTarget(rhiCmdList, backBuffer, FTextureRHIRef());
-	FTextureRHIParamRef targets[1] = { backBuffer };
-	rhiCmdList.ClearColorTextures(1, targets, &FLinearColor::Black,FIntRect());
+	FRHIRenderTargetView ColorView(backBuffer, 0, -1, ERenderTargetLoadAction::EClear, ERenderTargetStoreAction::EStore);
+	FRHIDepthRenderTargetView DepthView(NULL, ERenderTargetLoadAction::ENoAction, ERenderTargetStoreAction::ENoAction, FExclusiveDepthStencil::DepthNop_StencilNop);
+	FRHISetRenderTargetsInfo Info(1, &ColorView, DepthView);
+
+	rhiCmdList.SetRenderTargetsAndClear(Info);
+
 	uint32 offset = FMath::Max((int)backBuffer->GetSizeX() - viewportWidth, 0) / 2;
 	rhiCmdList.SetViewport(offset, 0, 0, viewportWidth + offset, viewportHeight, 1.0f);
 
