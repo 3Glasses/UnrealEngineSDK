@@ -39,7 +39,7 @@ public class ThreeGlassesInput : ModuleRules
                 "Engine",
     //            "InputCore",        // Provides LOCTEXT and other Input features
 				//"InputDevice",      // Provides IInputInterface
-    //            "HeadMountedDisplay",
+                "HeadMountedDisplay",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -52,16 +52,18 @@ public class ThreeGlassesInput : ModuleRules
 				"Engine",
     //            "InputCore",        // Provides LOCTEXT and other Input features
 				//"InputDevice",      // Provides IInputInterface
-    //            "HeadMountedDisplay",
+                "HeadMountedDisplay",
                 "Slate",
 				"SlateCore",
        
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
-		
-		
-		DynamicallyLoadedModuleNames.AddRange(
+
+        PublicLibraryPaths.Add(ModuleDirectory + "/lib/");
+        PublicAdditionalLibraries.Add("SZVR_MEMAPI.lib");
+
+        DynamicallyLoadedModuleNames.AddRange(
 			new string[]
 			{
 				// ... add any modules that your module loads dynamically here ...
