@@ -5,6 +5,7 @@
 #include "AllowWindowsPlatformTypes.h"
 #include <d3d11.h>
 #include "ThirdParty/Windows/DirectX/Include/D3DX11tex.h"
+#include "SZVR_MEMAPI.h"
 #include "HideWindowsPlatformTypes.h"
 #endif
 
@@ -17,9 +18,8 @@
 #include "SceneView.h"
 
 #include "Shader.h"
-#include "SZVR_CAPI.h"
 
-#define THREE_GLASSES_SUPPORTED_PLATFORMS (PLATFORM_WINDOWS && WINVER > 0x0502)
+#define THREE_GLASSES_SUPPORTED_PLATFORMS 1//(PLATFORM_WINDOWS && WINVER > 0x0502)
 #if THREE_GLASSES_SUPPORTED_PLATFORMS
 
 class FThreeGlassesHMD : public IHeadMountedDisplay, public ISceneViewExtension, public TSharedFromThis < FThreeGlassesHMD, ESPMode::ThreadSafe >
@@ -105,6 +105,8 @@ public:
 	virtual void OnBeginPlay(FWorldContext& InWorldContext) override;
 	virtual void OnEndPlay(FWorldContext& InWorldContext) override;
 
+	void SetMotionPredictionFactor(bool bPredictionOn, bool bOpenVsync, float scale, int maxFps);
+	void SetStereoEffectParam(float fov, float gazePlane);
 public:
 	/** Constructor */
 	FThreeGlassesHMD();
@@ -125,16 +127,26 @@ public:
 		check(IsInGameThread());
 		return IsStereoEnabled();
 	}
-#if PLATFORM_WINDOWS
-	public:
-		const int32 MirrorWidth = 800;
-		const int32 MirrorHeight = 800;
-	FTexture2DRHIRef			       MirrorTexture = NULL;
+
+public:
+	FTexture2DRHIRef			            MirrorTexture = NULL;
+	int32									HMDDesktopX = 0;
+	int32									HMDDesktopY = 0;
+	int32									HMDResX = 2880;
+	int32									HMDResY = 1440;
+	bool									bDirectMode = false;
+	IDXGISwapChain*							SwapChain = NULL;
+	ID3D11Device*							Device = NULL;
+	ID3D11DeviceContext*					D3DContext = NULL;
+	HWND									MonitorWindow = NULL;
+	int										DxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+
 	bool AllocateMirrorTexture();
 	void CopyToMirrorTexture(FRHICommandListImmediate &RHICmdList, const FTextureRHIRef& SrcTexture);
 	void RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const;
-	IRendererModule*			   RendererModule = NULL;
-#endif // PLATFORM_WINDOWS
+	void InitWindow(HINSTANCE hInst);
+	void MonitorPresent(struct ID3D11Texture2D* tex2d) const;
+	IRendererModule*						RendererModule = NULL;
 
 	bool AllocateRenderTargetTexture(
 		uint32 index,
@@ -170,16 +182,15 @@ private:
 
 	struct FDistortionMesh
 	{
-		DistMeshVert*				pVertices;
 		FDistortionVertex*			pVerticesCached;
 		int*						pIndices;
 		int							NumVertices;
 		int							NumIndices;
 		int							NumTriangles;
 
-		FDistortionMesh() :pVertices(nullptr), pIndices(nullptr), NumVertices(0), NumIndices(0), NumTriangles(0) {}
+		FDistortionMesh() : pIndices(nullptr), NumVertices(0), NumIndices(0), NumTriangles(0) {}
 		~FDistortionMesh() { Clear(); }
-		void Clear() { delete pVertices; delete pIndices; NumVertices = NumIndices = NumTriangles = 0; }
+		void Clear() {  delete pIndices; NumVertices = NumIndices = NumTriangles = 0; }
 	};
 
 	typedef uint64 bool64;
@@ -245,26 +256,27 @@ private:
 		uint64 Raw;
 	} Flags;
 
-	const szvrHeadDisplayDevice * Hmd;
-
-	float NearClippingPlane;
-	float FarClippingPlane;
-
 	float WorldToMetersScale;
 	float ScreenPercentage;
 
-	float HFOVInRadians; // horizontal
-	float VFOVInRadians; // vertical
+	FQuat	LastOrientation = {0,0,0,1};
+	FVector LastPosition = {0,0,0};
+
+	//float HFOVInRadians; // horizontal
+	//float VFOVInRadians; // vertical
 
 	float InterpupillaryDistance;
 
-	mutable FQuat			CurHmdOrientation;
+	float MotionPredictionFactor;
+	float AspectRatio;
+	float HFOV;
+	float GazePlane;
+
+	bool bVsyncOn;
+	bool bIsMotionPredictionOn;
+
 	FQuat DeltaControlOrientation; // same as DeltaControlRotation but as quat
 	FRotator DeltaControlRotation;
-
-	mutable FVector			CurHmdPosition;
-	FQuat LastHmdOrientation; // contains last APPLIED ON GT HMD orientation
-	FVector LastHmdPosition;
 
 	// HMD base values, specify forward orientation and zero pos offset
 	FQuat BaseOrientation;	// base orientation
@@ -274,16 +286,6 @@ private:
 	FDistortionMesh DistorMesh[2];
 
 	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition);
+	void SetVsync(bool bOpenVsync, float maxFps);
 };
-
-FORCEINLINE FMatrix ToFMatrix(const szvrMatrix4f& vtm)
-{
-	// Rows and columns are swapped between OVR::Matrix4f and FMatrix
-	return FMatrix(
-		FPlane(vtm.M[0][0], vtm.M[1][0], vtm.M[2][0], vtm.M[3][0]),
-		FPlane(vtm.M[0][1], vtm.M[1][1], vtm.M[2][1], vtm.M[3][1]),
-		FPlane(vtm.M[0][2], vtm.M[1][2], vtm.M[2][2], vtm.M[3][2]),
-		FPlane(vtm.M[0][3], vtm.M[1][3], vtm.M[2][3], vtm.M[3][3]));
-}
-
 #endif //THREE_GLASSES_SUPPORTED_PLATFORMS

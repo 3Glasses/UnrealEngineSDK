@@ -1,5 +1,6 @@
 ﻿#include "ThreeGlassesHMD.h"
 
+#include "Runtime/Launch/Resources/Version.h"
 #include "Runtime/Renderer/Private/RendererPrivate.h"
 #include "Runtime/Renderer/Private/ScenePrivate.h"
 #include "Runtime/RenderCore/Public/RenderUtils.h"
@@ -9,9 +10,12 @@
 #include "SceneViewport.h"
 #include "DrawDebugHelpers.h"
 #include "Runtime/Windows/D3D11RHI/Private/D3D11RHIPrivate.h"
+#include "Runtime/Core/Public/Windows/WindowsWindow.h"
 #if WITH_EDITOR
 #include "Editor/UnrealEd/Classes/Editor/EditorEngine.h"
 #endif
+
+#pragma warning(disable : 4191)
 
 #if THREE_GLASSES_SUPPORTED_PLATFORMS
 
@@ -20,7 +24,11 @@ class FThreeGlassesPlugin : public IThreeGlassesPlugin
 	/** IHeadMountedDisplayModule implementation */
 	virtual TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > CreateHeadMountedDisplay() override;
 
-	FString GetModulePriorityKeyName() const
+#if ENGINE_MINOR_VERSION >= 14
+	virtual FString GetModuleKeyName() const
+#else
+	virtual FString GetModulePriorityKeyName() const
+#endif
 	{
 		return FString(TEXT("ThreeGlasses"));
 	}
@@ -29,13 +37,12 @@ public:
 
 };
 
-typedef bool(*InitDirectModeFunc)(char* ErrorMsg, int msgLength, int &SurfaceFormat);
-typedef void(*DirectModePresentFunc)(struct ID3D11Texture2D* srcTexture);
-typedef void(*ClearDirectModeFunc)();
+typedef bool(WINAPI * InitDirectModeFunc)(char* ErrorMsg, int msgLength, int &SurfaceFormat);
+typedef void(WINAPI * DirectModePresentFunc)(struct ID3D11Texture2D* srcTexture);
+typedef void(WINAPI * ClearDirectModeFunc)();
 InitDirectModeFunc InitDirectMode = NULL;
 DirectModePresentFunc DirectModePresent = NULL;
 ClearDirectModeFunc ClearDirectMode = NULL;
-int DxgiFormat;
 
 IMPLEMENT_MODULE(FThreeGlassesPlugin, ThreeGlasses)
 
@@ -62,11 +69,6 @@ void FThreeGlassesHMD::RebaseObjectOrientationAndPosition(FVector& Position, FQu
 void FThreeGlassesHMD::EnableHMD(bool enable)
 {
 	Flags.bHMDEnabled = enable;
-
-	if (!Flags.bHMDEnabled)
-	{
-		EnableStereo(false);
-	}
 }
 
 EHMDDeviceType::Type FThreeGlassesHMD::GetHMDDeviceType() const
@@ -80,33 +82,20 @@ bool FThreeGlassesHMD::GetHMDMonitorInfo(MonitorInfo& MonitorDesc)
 	{
 		InitDevice();
 	}
-	if (Hmd)
-	{
-		MonitorDesc.MonitorName = Hmd->szDevice;
-		MonitorDesc.MonitorId = Hmd->DisplayId;
-		MonitorDesc.DesktopX = Hmd->WindowsPos.x;
-		MonitorDesc.DesktopY = Hmd->WindowsPos.y;
-		MonitorDesc.ResolutionX = Hmd->Resolution.w;
-		MonitorDesc.ResolutionY = Hmd->Resolution.h;
-		return true;
-	}
-	else
-	{
-		MonitorDesc.MonitorName = "";
-		MonitorDesc.MonitorId = 0;
-		MonitorDesc.DesktopX = MonitorDesc.DesktopY = MonitorDesc.ResolutionX = MonitorDesc.ResolutionY = 0;
-		MonitorDesc.WindowSizeX = MonitorDesc.WindowSizeY = 0;
-	}
 
-	MonitorDesc.ResolutionX = 2880;
-	MonitorDesc.ResolutionY = 1440;
+	MonitorDesc.MonitorName = FString(TEXT("ThreeGlasses"));
+	MonitorDesc.MonitorId = 0;
+	MonitorDesc.DesktopX = HMDDesktopX;
+	MonitorDesc.DesktopY = HMDDesktopY;
+	MonitorDesc.ResolutionX = MonitorDesc.WindowSizeX = HMDResX;
+	MonitorDesc.ResolutionY = MonitorDesc.WindowSizeY = HMDResY;
 	return false;
 }
 
 void FThreeGlassesHMD::GetFieldOfView(float& OutHFOVInDegrees, float& OutVFOVInDegrees) const
 {
-	OutHFOVInDegrees = FMath::RadiansToDegrees(HFOVInRadians);
-	OutVFOVInDegrees = FMath::RadiansToDegrees(VFOVInRadians);
+	OutHFOVInDegrees = FMath::RadiansToDegrees(HFOV);
+	OutVFOVInDegrees = FMath::RadiansToDegrees(HFOV);
 }
 
 bool FThreeGlassesHMD::DoesSupportPositionalTracking() const
@@ -138,23 +127,36 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 {
 	if (IsHMDConnected())
 	{
-		SZVR_GetHmdOrientationWithQuaternion(
-			&CurrentHmdOrientation.Y, 
-			&CurrentHmdOrientation.Z,
-			&CurrentHmdOrientation.X,
-			&CurrentHmdOrientation.W);
-		CurrentHmdOrientation.Y *= -1;
-		CurrentHmdOrientation.Z *= -1;
+		float data[4] = { 0,0,0,0 };
+		FQuat quat = { 0,0,0,1 };
+		if (SZVR_GetHMDRotate(data))
+		{
+			quat.Y = -data[0];
+			quat.Z = -data[1];
+			quat.X = data[2];
+			quat.W = data[3];
+
+			if (quat.IsNormalized())
+			{
+				LastOrientation = quat;
+			}
+		}
+
+		FVector loc(0, 0, 0);
+		if (SZVR_GetHMDPos(&loc.X))
+		{
+			LastPosition = FVector(-loc.Z, loc.X, loc.Y)*0.1f;
+			LastPosition = ClampVector(LastPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
+		}
+		CurrentHmdPosition = LastPosition;
+		CurrentHmdOrientation = LastOrientation;
 	}
 }
 
 void FThreeGlassesHMD::GetCurrentOrientationAndPosition(FQuat& CurrentOrientation, FVector& CurrentPosition)
 {
 	check(IsInGameThread());
-	GetCurrentPose(CurHmdOrientation, CurHmdPosition);
-	CurrentOrientation = LastHmdOrientation = CurHmdOrientation;
-
-	CurrentPosition = CurHmdPosition;
+	GetCurrentPose(CurrentOrientation, CurrentPosition);
 }
 
 TSharedPtr<ISceneViewExtension, ESPMode::ThreadSafe> FThreeGlassesHMD::GetViewExtension()
@@ -167,8 +169,9 @@ void FThreeGlassesHMD::ApplyHmdRotation(APlayerController* PC, FRotator& ViewRot
 {
 	ViewRotation.Normalize();
 
+	FQuat CurHmdOrientation;
+	FVector CurHmdPosition;
 	GetCurrentPose(CurHmdOrientation, CurHmdPosition);
-	LastHmdOrientation = CurHmdOrientation;
 
 	const FRotator DeltaRot = ViewRotation - PC->GetControlRotation();
 	DeltaControlRotation = (DeltaControlRotation + DeltaRot).GetNormalized();
@@ -182,34 +185,15 @@ void FThreeGlassesHMD::ApplyHmdRotation(APlayerController* PC, FRotator& ViewRot
 	ViewRotation = FRotator(DeltaControlOrientation * CurHmdOrientation);
 }
 
-#if __UESDK_4_10__
-void FThreeGlassesHMD::UpdatePlayerCameraRotation(APlayerCameraManager* Camera, struct FMinimalViewInfo& POV)
-{
-	GetCurrentPose(CurHmdOrientation, CurHmdPosition);
-	LastHmdOrientation = CurHmdOrientation;
-
-	DeltaControlRotation = POV.Rotation;
-	DeltaControlOrientation = DeltaControlRotation.Quaternion();
-
-	// Apply HMD orientation to camera rotation.
-	POV.Rotation = FRotator(POV.Rotation.Quaternion() * CurHmdOrientation);
-}
-#endif
-
 bool FThreeGlassesHMD::UpdatePlayerCamera(FQuat& CurrentOrientation, FVector& CurrentPosition)
 {
-	GetCurrentPose(CurHmdOrientation, CurHmdPosition);
-	LastHmdOrientation = CurHmdOrientation;
-	LastHmdPosition = CurHmdPosition;
+	GetCurrentPose(CurrentOrientation, CurrentPosition);
 
 	if (!bImplicitHmdPosition && GEnableVREditorHacks)
 	{
 		DeltaControlOrientation = CurrentOrientation;
 		DeltaControlRotation = DeltaControlOrientation.Rotator();
 	}
-
-	CurrentOrientation = CurHmdOrientation;
-	CurrentPosition = CurHmdPosition;
 
 	return true;
 }
@@ -234,9 +218,9 @@ bool FThreeGlassesHMD::IsHeadTrackingAllowed() const
 #if WITH_EDITOR
 	UEditorEngine* EdEngine = Cast<UEditorEngine>(GEngine);
 #endif//WITH_EDITOR
-	return Hmd &&
+	return
 #if WITH_EDITOR
-		(!EdEngine || EdEngine->bUseVRPreviewForPlayWorld || GetDefault<ULevelEditorPlaySettings>()->ViewportGetsHMDControl) &&
+	(!EdEngine || EdEngine->bUseVRPreviewForPlayWorld || GetDefault<ULevelEditorPlaySettings>()->ViewportGetsHMDControl) &&
 #endif//WITH_EDITOR
 		(GEngine->IsStereoscopic3D());
 }
@@ -270,8 +254,6 @@ void FThreeGlassesHMD::ResetOrientation(float Yaw)
 	}
 
 	BaseOrientation = ViewRotation.Quaternion();
-
-	SZVR_ResetSensorOrientation();
 }
 
 void FThreeGlassesHMD::ResetPosition()
@@ -305,31 +287,85 @@ void FThreeGlassesHMD::ApplySystemOverridesOnStereo(bool force)
 	// TODO: update flags/settings here triggered by exec
 }
 
+FVector GetPos(float i, float j, uint32_t GirdNum)
+{
+	auto unitUV = 1.0f / GirdNum;
+	return FVector(i*unitUV * 2 - 1, 1.0f - j*unitUV * 2, 0.5f);
+}
+
+void GetMash(TArray<FVector>& vertices, TArray<uint16>& indices, uint32_t GirdNum)
+{
+	for (uint32_t j = 0; j < GirdNum + 1; j++)
+	{
+		for (uint32_t i = 0; i < GirdNum + 1; i++)
+		{
+			vertices.Add(GetPos(static_cast<float>(i), static_cast<float>(j), GirdNum));
+		}
+	}
+	auto mid = GirdNum / 2;
+	for (uint32_t j = 0; j < GirdNum; j++)
+	{
+		for (uint32_t i = 0; i < GirdNum; i++)
+		{
+			if ((i < mid&&j < mid) || (i >= mid&&j >= mid))
+			{
+				indices.Add(i + j*(GirdNum + 1));
+				indices.Add(i + 1 + j*(GirdNum + 1));
+				indices.Add(i + (j + 1)*(GirdNum + 1));
+				indices.Add(i + (j + 1)*(GirdNum + 1));
+				indices.Add(i + 1 + j*(GirdNum + 1));
+				indices.Add(i + 1 + (j + 1)*(GirdNum + 1));
+			}
+			else
+			{
+				indices.Add(i + j*(GirdNum + 1));
+				indices.Add(i + 1 + j*(GirdNum + 1));
+				indices.Add(i + 1 + (j + 1)*(GirdNum + 1));
+				indices.Add(i + j*(GirdNum + 1));
+				indices.Add(i + 1 + (j + 1)*(GirdNum + 1));
+				indices.Add(i + (j + 1)*(GirdNum + 1));
+			}
+		}
+	}
+}
+
 void FThreeGlassesHMD::UpdateStereoRenderingParams()
 {
-	// If we've manually overridden stereo rendering params for debugging, don't mess with them
-	if (Flags.bOverrideStereo || !IsStereoEnabled() )
+	if (IsInitialized())
 	{
-		return;
-	}
-	if (IsInitialized() && Hmd)
-	{
-		DistScaleOffsetUV DummyDistScale;
+		TArray<FVector> vertices;
+		TArray<uint16> Indices;
+		int GirdNum = 64;
+		GetMash(vertices, Indices, GirdNum);
+
 		for (int eyeIndex = szvrEye_Left; eyeIndex < szvrEye_Count; ++eyeIndex)
 		{
-			SZVR_CopyDistortionMesh(DistorMesh[eyeIndex].pVertices, DistorMesh[eyeIndex].pIndices, &DummyDistScale, eyeIndex == szvrEye_Right);
-
-			for (int i = 0; i < DistorMesh[eyeIndex].NumVertices; ++i)
+			//SZVR_CopyDistortionMesh(DistorMesh[eyeIndex].pVertices, DistorMesh[eyeIndex].pIndices, &DummyDistScale, eyeIndex == szvrEye_Right);
+			int VertNum = vertices.Num();
+			int IndexNum = Indices.Num();
+			DistorMesh[eyeIndex].NumVertices = VertNum;
+			DistorMesh[eyeIndex].NumIndices = IndexNum;
+			DistorMesh[eyeIndex].NumTriangles = IndexNum / 3;
+			DistorMesh[eyeIndex].pVerticesCached = new FDistortionVertex[VertNum];
+			DistorMesh[eyeIndex].pIndices = new int[IndexNum];
+			for (int i = 0; i < VertNum; ++i)
 			{
-				DistorMesh[eyeIndex].pVerticesCached[i].Position.X = DistorMesh[eyeIndex].pVertices[i].ScreenPosNDC_x;
-				DistorMesh[eyeIndex].pVerticesCached[i].Position.Y = DistorMesh[eyeIndex].pVertices[i].ScreenPosNDC_y;
+				DistorMesh[eyeIndex].pVerticesCached[i].Position.X = vertices[i].X*0.5f - 0.5f + eyeIndex;
+				DistorMesh[eyeIndex].pVerticesCached[i].Position.Y = vertices[i].Y;
 
 				DistorMesh[eyeIndex].pVerticesCached[i].VignetteFactor = 1.0f;
-				DistorMesh[eyeIndex].pVerticesCached[i].TimewarpFactor = DistorMesh[eyeIndex].pVertices[i].TimewarpLerp;
+				DistorMesh[eyeIndex].pVerticesCached[i].TimewarpFactor = 0;
+				FVector2D uv = { (vertices[i].X / 2.0f) + 0.5f, 0.5f - vertices[i].Y / 2.0f };
 
-				DistorMesh[eyeIndex].pVerticesCached[i].TexR = FVector2D(DistorMesh[eyeIndex].pVertices[i].UVIR_u, DistorMesh[eyeIndex].pVertices[i].UVIR_v);
-				DistorMesh[eyeIndex].pVerticesCached[i].TexG = FVector2D(DistorMesh[eyeIndex].pVertices[i].UVIG_u, DistorMesh[eyeIndex].pVertices[i].UVIG_v);
-				DistorMesh[eyeIndex].pVerticesCached[i].TexB = FVector2D(DistorMesh[eyeIndex].pVertices[i].UVIB_u, DistorMesh[eyeIndex].pVertices[i].UVIB_v);
+				SZVR_GetDistortion(HMDResX, &uv.X, &DistorMesh[eyeIndex].pVerticesCached[i].TexR.X, &DistorMesh[eyeIndex].pVerticesCached[i].TexG.X, &DistorMesh[eyeIndex].pVerticesCached[i].TexB.X);
+				DistorMesh[eyeIndex].pVerticesCached[i].TexR.X = DistorMesh[eyeIndex].pVerticesCached[i].TexR.X*0.5f + 0.5f*eyeIndex;
+				DistorMesh[eyeIndex].pVerticesCached[i].TexG.X = DistorMesh[eyeIndex].pVerticesCached[i].TexG.X*0.5f + 0.5f*eyeIndex;
+				DistorMesh[eyeIndex].pVerticesCached[i].TexB.X = DistorMesh[eyeIndex].pVerticesCached[i].TexB.X*0.5f + 0.5f*eyeIndex;
+			}
+
+			for (int i = 0; i < IndexNum; i++)
+			{
+				DistorMesh[eyeIndex].pIndices[i] = Indices[i];
 			}
 		}
 
@@ -394,6 +430,7 @@ void FThreeGlassesHMD::DrawDistortionMesh_RenderThread(struct FRenderingComposit
 		FRenderingCompositeOutputRef*  OutputRef = Context.Pass->GetInput(ePId_Input0);
 		FRenderingCompositePass* Source = *(FRenderingCompositePass**)(OutputRef);
 		FRenderingCompositeOutput* Input = Source->GetOutput(OutputRef->GetOutputId());
+		//FRenderingCompositeOutput* Input = OutputRef->GetOutput();
 
 		TRefCountPtr<IPooledRenderTarget> InputPooledElement = Input->RequestInput();
 
@@ -409,7 +446,7 @@ static void RenderLines(FCanvas* Canvas, int numLines, const FColor& c, float* x
 {
 	for (int i = 0; i < numLines; ++i)
 	{
-		FCanvasLineItem line(FVector2D((x[i * 2]/2+0.5)*1280, (-y[i * 2]/2+0.5)*720), FVector2D((x[i * 2 + 1]/2+0.5)*1280, (-y[i * 2 + 1]/2+0.5)*720));
+		FCanvasLineItem line(FVector2D((x[i * 2] / 2 + 0.5) * 1280, (-y[i * 2] / 2 + 0.5) * 720), FVector2D((x[i * 2 + 1] / 2 + 0.5) * 1280, (-y[i * 2 + 1] / 2 + 0.5) * 720));
 		line.SetColor(FLinearColor(c));
 		Canvas->DrawItem(line);
 	}
@@ -454,21 +491,19 @@ void FThreeGlassesHMD::DrawDebug(UCanvas* Canvas)
 
 bool FThreeGlassesHMD::IsStereoEnabled() const
 {
-	return true;
+	return Flags.bStereoEnabled && Flags.bHMDEnabled;
 }
 
 bool FThreeGlassesHMD::EnableStereo(bool stereo)
 {
-	Flags.bStereoEnabled = (IsHMDEnabled()) ? stereo : false;
-	FSystemResolution::RequestResolutionChange(2880, 1440, EWindowMode::Windowed);
+	bool NewEnable = (IsHMDEnabled()) ? stereo : false;
+	if (Flags.bStereoEnabled == NewEnable)
+		return Flags.bStereoEnabled;
 
-	int32 width = 2880;
-	int32 height = 1440;
-
+	Flags.bStereoEnabled = NewEnable;
 	FSceneViewport* sceneViewport;
 	if (!GIsEditor)
 	{
-		//UE_LOG(OSVRHMDLog, Warning, TEXT("OSVR getting UGameEngine::SceneViewport viewport"));
 		UGameEngine* gameEngine = Cast<UGameEngine>(GEngine);
 		sceneViewport = gameEngine->SceneViewport.Get();
 	}
@@ -493,21 +528,26 @@ bool FThreeGlassesHMD::EnableStereo(bool stereo)
 	{
 		return false;
 	}
+
+	if (Flags.bStereoEnabled)
+	{
+		auto window = sceneViewport->FindWindow();
+
+		sceneViewport->SetViewportSize(HMDResX, HMDResY);
+		if (window.IsValid())
+		{
+			window->SetViewportSizeDrivenByWindow(false);
+			window->FlashWindow();
+		}
+	}
 	else
 	{
-		//UE_LOG(OSVRHMDLog, Warning, TEXT("OSVR scene viewport exists"));
-#if !WITH_EDITOR
+		sceneViewport->SetViewportSize(GSystemResolution.ResX, GSystemResolution.ResY);
 		auto window = sceneViewport->FindWindow();
-#endif
-		if (stereo)
+
+		if (window.IsValid())
 		{
-			sceneViewport->SetViewportSize(width, height);
-#if !WITH_EDITOR
-			if (window.IsValid())
-			{
-				window->SetViewportSizeDrivenByWindow(false);
-			}
-#endif
+			window->SetViewportSizeDrivenByWindow(true);
 		}
 	}
 
@@ -516,13 +556,8 @@ bool FThreeGlassesHMD::EnableStereo(bool stereo)
 
 void FThreeGlassesHMD::AdjustViewRect(EStereoscopicPass StereoPass, int32& X, int32& Y, uint32& SizeX, uint32& SizeY) const
 {
-	int PosX = 0, PosY =0, Width=2880, Height=1440;
-	/*if (SZVR_GetHmdMonitor(&PosX, &PosY, &Width, &Height))
-	{
-		SizeX = Width; SizeY = Height;
-	}*/
-	SizeX = 2880;
-	SizeY = 1440;
+	SizeX = HMDResX;
+	SizeY = HMDResY;
 	SizeX = SizeX / 2;
 	if (StereoPass == eSSP_RIGHT_EYE)
 	{
@@ -537,7 +572,9 @@ void FThreeGlassesHMD::CalculateStereoViewOffset(const enum EStereoscopicPass St
 		float EyeOffset = (GetInterpupillaryDistance() * WorldToMeters) / 2.0f;
 		const float PassOffset = (StereoPassType == eSSP_LEFT_EYE) ? -EyeOffset : EyeOffset;
 		ViewLocation += ViewRotation.Quaternion().RotateVector(FVector(0, PassOffset, 0));
-
+		FQuat CurHmdOrientation;
+		FVector CurHmdPosition;
+		GetCurrentPose(CurHmdOrientation, CurHmdPosition);
 		const FVector vHMDPosition = DeltaControlOrientation.RotateVector(CurHmdPosition);
 		ViewLocation += vHMDPosition;
 	}
@@ -545,15 +582,48 @@ void FThreeGlassesHMD::CalculateStereoViewOffset(const enum EStereoscopicPass St
 
 FMatrix FThreeGlassesHMD::GetStereoProjectionMatrix(const enum EStereoscopicPass StereoPassType, const float FOV) const
 {
-	const float ProjectionCenterOffset = 0.1f;
-	const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
+	//const float ProjectionCenterOffset = 0.1f;
+	//const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
 
-	return FMatrix(
-		FPlane(FMath::Tan(0.5*PI-HFOVInRadians), 0.0f, 0.0f, 0.0f),
-		FPlane(0.0f, FMath::Tan(0.5*PI - HFOVInRadians), 0.0f, 0.0f),
-		FPlane(0.0f, 0.0f, 0.0f, 1.0f),
-		FPlane(0.0f, 0.0f, GNearClippingPlane, 0.0f))
-		* FTranslationMatrix(FVector(PassProjectionOffset, 0, 0));
+	//return FMatrix(
+	//	FPlane(FMath::Tan(0.5*PI - HFOVInRadians), 0.0f, 0.0f, 0.0f),
+	//	FPlane(0.0f, FMath::Tan(0.5*PI - HFOVInRadians), 0.0f, 0.0f),
+	//	FPlane(0.0f, 0.0f, 0.0f, 1.0f),
+	//	FPlane(0.0f, 0.0f, GNearClippingPlane, 0.0f))
+	//	* FTranslationMatrix(FVector(PassProjectionOffset, 0, 0));
+
+	float ZNear = GNearClippingPlane;
+	float wd = ZNear * FMath::Abs(FMath::Tan(HFOV * PI / 180.0f * 0.5f) * 2.0f);
+	float r = wd;
+	float l = -wd;
+	float t = wd / (AspectRatio * 0.5f);
+	float b = -wd / (AspectRatio * 0.5f);
+
+	float offest = GetInterpupillaryDistance() * WorldToMetersScale * 0.5f / GazePlane;
+	if (StereoPassType == eSSP_RIGHT_EYE)//eSSP_LEFT_EYE eSSP_RIGHT_EYE
+	{
+		r = r - offest;
+		l = l - offest;
+	}
+	else
+	{
+		r = r + offest;
+		l = l + offest;
+	}
+
+	float SumRL = (r + l);
+	float SumTB = (t + b);
+	float InvRL = (1.0f / (r - l));
+	float InvTB = (1.0f / (t - b));
+
+	FMatrix Mat = FMatrix(
+		FPlane((2.0f * ZNear * InvRL), 0.0f, 0.0f, 0.0f),
+		FPlane(0.0f, (2.0f * ZNear * InvTB), 0.0f, 0.0f),
+		FPlane((SumRL * InvRL), (SumTB * InvTB), 0.0f, 1.0f),
+		FPlane(0.0f, 0.0f, ZNear, 0.0f)
+	);
+
+	return Mat;
 }
 
 void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
@@ -562,11 +632,17 @@ void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
 
 void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const
 {
-	const uint32 viewportWidth = MirrorTexture->GetSizeX();
-	const uint32 viewportHeight = MirrorTexture->GetSizeY();
+	const int viewportWidth = backBuffer->GetSizeY();
+	const int viewportHeight = backBuffer->GetSizeY();
 
-	SetRenderTarget(rhiCmdList, backBuffer, FTextureRHIRef());
-	rhiCmdList.SetViewport(0, 0, 0, viewportWidth, viewportHeight, 1.0f);
+	FRHIRenderTargetView ColorView(backBuffer, 0, -1, ERenderTargetLoadAction::EClear, ERenderTargetStoreAction::EStore);
+	FRHIDepthRenderTargetView DepthView(NULL, ERenderTargetLoadAction::ENoAction, ERenderTargetStoreAction::ENoAction, FExclusiveDepthStencil::DepthNop_StencilNop);
+	FRHISetRenderTargetsInfo Info(1, &ColorView, DepthView);
+
+	rhiCmdList.SetRenderTargetsAndClear(Info);
+
+	uint32 offset = FMath::Max((int)backBuffer->GetSizeX() - viewportWidth, 0) / 2;
+	rhiCmdList.SetViewport(offset, 0, 0, viewportWidth + offset, viewportHeight, 1.0f);
 
 	rhiCmdList.SetBlendState(TStaticBlendState<>::GetRHI());
 	rhiCmdList.SetRasterizerState(TStaticRasterizerState<>::GetRHI());
@@ -599,8 +675,15 @@ void FThreeGlassesHMD::RenderTexture_RenderThread(class FRHICommandListImmediate
 {
 	check(IsInRenderingThread());
 
-	RenderMirrorToBackBuffer(rhiCmdList,backBuffer);
-	DirectModePresent((ID3D11Texture2D*)srcTexture->GetNativeResource());
+	RenderMirrorToBackBuffer(rhiCmdList, backBuffer);
+
+	if (bDirectMode)
+	{
+		DirectModePresent((ID3D11Texture2D*)srcTexture->GetNativeResource());
+	}
+	else
+		MonitorPresent((ID3D11Texture2D*)srcTexture->GetNativeResource());
+
 }
 
 #if PLATFORM_WINDOWS
@@ -608,7 +691,7 @@ void FThreeGlassesHMD::RenderTexture_RenderThread(class FRHICommandListImmediate
 bool FThreeGlassesHMD::NeedReAllocateViewportRenderTarget(const FViewport &viewport)
 {
 	check(IsInGameThread());
-	
+
 	return false;
 }
 
@@ -633,30 +716,9 @@ void FThreeGlassesHMD::SetupViewFamily(FSceneViewFamily& InViewFamily)
 
 void FThreeGlassesHMD::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView)
 {
-	InView.BaseHmdOrientation = LastHmdOrientation;
-	InView.BaseHmdLocation = LastHmdPosition;
+	GetCurrentPose(InView.BaseHmdOrientation, InView.BaseHmdLocation);
 	WorldToMetersScale = InView.WorldToMetersScale;
-	NearClippingPlane = Hmd->CameraFrustumNearZInMeters * WorldToMetersScale;
-	FarClippingPlane = Hmd->CameraFrustumFarZInMeters * WorldToMetersScale;
 	InViewFamily.bUseSeparateRenderTarget = ShouldUseSeparateRenderTarget();
-
-	/*int x=0, y=0, w=2560, h=1440;
-	SZVR_GetHmdMonitor(&x, &y, &w, &h);
-	FVector2D WindowPosition = FVector2D((float)x, (float)y);
-	FVector2D WindowSize = FVector2D((float)w, (float)h);*/
-
-	RECT WindowRect;
-	ZeroMemory(&WindowRect, sizeof(WindowRect));
-	WindowRect.left = (GetSystemMetrics(SM_CXSCREEN) - MirrorWidth) / 2;
-	WindowRect.top = (GetSystemMetrics(SM_CYSCREEN) - MirrorHeight) / 2;
-	WindowRect.right = WindowRect.left + MirrorWidth;
-	WindowRect.bottom = WindowRect.top + MirrorHeight;
-	FVector2D WindowPosition = FVector2D((float)WindowRect.left, (float)WindowRect.top);
-	FVector2D WindowSize = FVector2D((float)MirrorWidth, (float)MirrorHeight);
-	GEngine->GameViewport->GetWindow()->MoveWindowTo(WindowPosition);
-	GEngine->GameViewport->GetWindow()->Resize(WindowSize);
-	GEngine->GameViewport->GetWindow()->SetWindowMode(EWindowMode::Windowed);
-	GEngine->GameViewport->GetWindow()->SetViewportSizeDrivenByWindow(true);
 }
 
 void FThreeGlassesHMD::OnBeginPlay(FWorldContext& InWorldContext)
@@ -669,14 +731,43 @@ void FThreeGlassesHMD::OnEndPlay(FWorldContext& InWorldContext)
 	FApp::SetHasVRFocus(false);
 }
 
-void FThreeGlassesHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& InView)
+void FThreeGlassesHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& View)
 {
 	check(IsInRenderingThread());
+
+	FQuat HmdOrientation;
+	FVector HmdPosition;
+	GetCurrentPose(HmdOrientation, HmdPosition);
+
+	// The last view location used to set the view will be in BaseHmdOrientation.  We need to calculate the delta from that, so that
+	// cameras that rely on game objects (e.g. other components) for their positions don't need to be updated on the render thread.
+	const FQuat DeltaOrient = View.BaseHmdOrientation.Inverse() * HmdOrientation;
+	View.ViewRotation = FRotator(View.ViewRotation.Quaternion() * DeltaOrient);
+
+	if (bImplicitHmdPosition)
+	{
+		const FQuat LocalDeltaControlOrientation = View.ViewRotation.Quaternion() * HmdOrientation.Inverse();
+		const FVector DeltaPosition = HmdPosition - View.BaseHmdLocation;
+		View.ViewLocation += LocalDeltaControlOrientation.RotateVector(DeltaPosition);
+	}
+
+	View.UpdateViewMatrix();
 }
 
 void FThreeGlassesHMD::PreRenderViewFamily_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& ViewFamily)
 {
 	check(IsInRenderingThread());
+
+	const FSceneView* MainView = ViewFamily.Views[0];
+
+	const FTransform OldRelativeTransform(MainView->BaseHmdOrientation, MainView->BaseHmdLocation);
+
+	FVector NewPosition;
+	FQuat NewOrientation;
+	GetCurrentPose(NewOrientation, NewPosition);
+	const FTransform NewRelativeTransform(NewOrientation, NewPosition);
+
+	ApplyLateUpdate(ViewFamily.Scene, OldRelativeTransform, NewRelativeTransform);
 }
 
 void FThreeGlassesHMD::Startup()
@@ -686,93 +777,114 @@ void FThreeGlassesHMD::Startup()
 	static IConsoleVariable* CVSyncVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync"));
 	CVSyncVar->Set(true);
 
-	for (int eyeIndex = szvrEye_Left; eyeIndex < szvrEye_Count; ++eyeIndex)
-	{
-		SZVR_GenerateDistortionMesh(&(DistorMesh[eyeIndex].NumVertices), &(DistorMesh[eyeIndex].NumIndices), eyeIndex == szvrEye_Right);
-		DistorMesh[eyeIndex].NumTriangles = DistorMesh[eyeIndex].NumIndices / 3;
-		DistorMesh[eyeIndex].pIndices = new int[DistorMesh[eyeIndex].NumIndices];
-
-		FMemory::Memzero(DistorMesh[eyeIndex].pIndices, DistorMesh[eyeIndex].NumIndices * sizeof(int));
-		DistorMesh[eyeIndex].pVertices = new DistMeshVert[DistorMesh[eyeIndex].NumVertices];
-		DistorMesh[eyeIndex].pVerticesCached = new FDistortionVertex[DistorMesh[eyeIndex].NumVertices];
-
-		FMemory::Memzero(DistorMesh[eyeIndex].pVertices, DistorMesh[eyeIndex].NumVertices * sizeof(DistMeshVert));
-		FMemory::Memzero(DistorMesh[eyeIndex].pVerticesCached, DistorMesh[eyeIndex].NumVertices * sizeof(FDistortionVertex));
-	}
-
-#if PLATFORM_WINDOWS
 	if (IsPCPlatform(GMaxRHIShaderPlatform) && !IsOpenGLPlatform(GMaxRHIShaderPlatform))
 	{
-		FString DllPath;
-		FString PluginPath = FPaths::GamePluginsDir();
-		TArray<FString> FileNames;
-		IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
-		if (FileNames.Num() == 0)
+		if (bDirectMode)
 		{
-			PluginPath = FPaths::EnginePluginsDir();
+			FString DllPath;
+			FString PluginPath = FPaths::GamePluginsDir();
+			TArray<FString> FileNames;
 			IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
-		}
-		
-		check(FileNames.Num() > 0);
-		DllPath = FileNames[0];
-		
+			if (FileNames.Num() == 0)
+			{
+				PluginPath = FPaths::EnginePluginsDir();
+				IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
+			}
+
+			check(FileNames.Num() > 0);
+			DllPath = FileNames[0];
+
 #if _WIN64
-		DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\x64\\D3D11Present.dll"));
+			DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\x64\\D3D11Present.dll"));
 #elif _WIN32
-		DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\win32\\D3D11Present.dll"));
+			DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\win32\\D3D11Present.dll"));
 #endif
-		HMODULE hModule = LoadLibrary(*DllPath);
-		if (!hModule)
-		{
-			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("DirectMode dll load failed!!")));
+			HMODULE hModule = LoadLibrary(*DllPath);
+			if (!hModule)
+			{
+				FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("DirectMode dll load failed!!")));
+			}
+
+			InitDirectMode = (InitDirectModeFunc)GetProcAddress(hModule, "InitDirectMode");
+			DirectModePresent = (DirectModePresentFunc)GetProcAddress(hModule, "DirectModePresent");
+			ClearDirectMode = (ClearDirectModeFunc)GetProcAddress(hModule, "ClearDirectMode");
+
+			char Msg[256] = { 0 };
+
+			if (!InitDirectMode(Msg, 256, DxgiFormat))
+				bDirectMode = false;
 		}
 
-		InitDirectMode = (InitDirectModeFunc)GetProcAddress(hModule, "InitDirectMode");
-		DirectModePresent = (DirectModePresentFunc)GetProcAddress(hModule, "DirectModePresent");
-		ClearDirectMode = (ClearDirectModeFunc)GetProcAddress(hModule, "ClearDirectMode");
-		
-		char Msg[256] = {0};
-	
-		if (!InitDirectMode(Msg,256,DxgiFormat))
+		if (!bDirectMode)
 		{
-			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Msg));
+			InitWindow(GetModuleHandle(NULL));
 		}
 	}
-#endif
 }
 
 void FThreeGlassesHMD::Shutdown()
 {
-	ClearDirectMode();
-	SZVR_Destroy();
-	Hmd = nullptr;
+	if (bDirectMode)
+		ClearDirectMode();
+	else
+	{
+		DestroyWindow(MonitorWindow);
+		UnregisterClass(TEXT("HMD"), GetModuleHandle(NULL));
+		if (SwapChain)
+		{
+			SwapChain->SetFullscreenState(false, nullptr);
+			SwapChain->Release();
+			SwapChain = NULL;
+		}
+
+		if (D3DContext)
+		{
+			D3DContext->ClearState();
+			D3DContext->Release();
+			D3DContext = NULL;
+		}
+
+		if (Device)
+		{
+			Device->Release();
+			Device = NULL;
+		}
+	}
 }
 
 FThreeGlassesHMD::FThreeGlassesHMD() :
-	CurHmdOrientation(FQuat::Identity),
-	LastHmdOrientation(FQuat::Identity),
 	BaseOrientation(FQuat::Identity),
 	DeltaControlRotation(FRotator::ZeroRotator),
 	DeltaControlOrientation(FQuat::Identity),
-	CurHmdPosition(FVector::ZeroVector),
-	ScreenPercentage(1.0f),
-	Hmd(nullptr)
+	ScreenPercentage(1.0f)
 {
 	Flags.Raw = 0;
 	Flags.bHmdDistortion = true;
 	Flags.bHMDEnabled = true;
-	SZVR_Initialize();
 
-	szvrHeadDisplayDevice * pHmd = new szvrHeadDisplayDevice;
-	FMemory::Memzero(pHmd, sizeof(szvrHeadDisplayDevice));
-	SZVR_GetHeadDisplayDevice(pHmd);
-	Hmd = pHmd;
+	InterpupillaryDistance = 0.1;
+	//HFOVInRadians = PI*90.f / 360.f;// Hmd->CameraFrustumHFovInRadians;
+	//VFOVInRadians = PI*90.f / 360.f;// Hmd->CameraFrustumVFovInRadians;
+	bVsyncOn = true;
+	bIsMotionPredictionOn = true;
+	MotionPredictionFactor = 1.367f;
 
-	SZVR_GetInterpupillaryDistance(&InterpupillaryDistance);
-	HFOVInRadians = PI*110.f/360.f;// Hmd->CameraFrustumHFovInRadians;
-	VFOVInRadians = PI*110.f /360.f;// Hmd->CameraFrustumVFovInRadians;
+	HFOV = 65.0f;
+	GazePlane = 33.95749f;
+
+	RECT rect;
+	if (SZVR_FindHMDRect(rect))
+	{
+		HMDDesktopX = rect.left;
+		HMDDesktopY = rect.top;
+		HMDResX = rect.right - rect.left;
+		HMDResY = rect.bottom - rect.top;
+	}
+
+	AspectRatio = HMDResX/ HMDResY;
 	Startup();
 	InitDevice();
+	SetVsync(bVsyncOn, 60.0f);
 }
 
 FThreeGlassesHMD::~FThreeGlassesHMD()
@@ -782,7 +894,7 @@ FThreeGlassesHMD::~FThreeGlassesHMD()
 
 bool FThreeGlassesHMD::IsInitialized() const
 {
-	return Hmd != nullptr;
+	return true;
 }
 
 bool FThreeGlassesHMD::InitDevice()
@@ -799,7 +911,7 @@ bool FThreeGlassesHMD::IsHMDConnected()
 {
 	if (IsHMDEnabled())
 	{
-		return Hmd != nullptr;
+		return HMDResX != 0;
 	}
 	return false;
 }
@@ -807,12 +919,12 @@ bool FThreeGlassesHMD::IsHMDConnected()
 void FThreeGlassesHMD::CalculateRenderTargetSize(const class FViewport& Viewport, uint32& InOutSizeX, uint32& InOutSizeY)
 {
 	check(IsInGameThread());
-	InOutSizeX = 2880;
-	InOutSizeY = 1440;
+	InOutSizeX = HMDResX;
+	InOutSizeY = HMDResY;
 	//SZVR_Get3GlassesResolution((char*)&InOutSizeX, (char*)&InOutSizeY);
 }
 
-bool FThreeGlassesHMD::AllocateMirrorTexture() 
+bool FThreeGlassesHMD::AllocateMirrorTexture()
 {
 	auto d3d11RHI = static_cast<FD3D11DynamicRHI*>(GDynamicRHI);
 	auto graphicsDevice = reinterpret_cast<ID3D11Device*>(RHIGetNativeDevice());
@@ -823,8 +935,8 @@ bool FThreeGlassesHMD::AllocateMirrorTexture()
 
 	D3D11_TEXTURE2D_DESC textureDesc;
 	memset(&textureDesc, 0, sizeof(textureDesc));
-	textureDesc.Width = MirrorWidth;
-	textureDesc.Height = MirrorHeight;
+	textureDesc.Width = 800;
+	textureDesc.Height = 800;
 	textureDesc.MipLevels = 1;
 	textureDesc.ArraySize = 1;
 	textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -886,7 +998,7 @@ bool FThreeGlassesHMD::AllocateMirrorTexture()
 		bCubemap, flags, bPooled, FClearValueBinding::Black);
 
 	MirrorTexture = targetableTexture->GetTexture2D();
-	
+
 	float color[4] = { 1,1,1,1 };
 	context->ClearRenderTargetView(renderTargetView, color);
 	context->Flush();
@@ -996,5 +1108,167 @@ FString FThreeGlassesHMD::GetVersionString() const
 void FThreeGlassesHMD::UpdateViewport(bool bUseSeparateRenderTarget, const FViewport& InViewport, class SViewport*)
 {
 	check(IsInGameThread());
+}
+
+void FThreeGlassesHMD::MonitorPresent(ID3D11Texture2D* tex2d) const
+{
+	HANDLE texHandle = 0;
+
+	IDXGIResource* pResource;
+	tex2d->QueryInterface(__uuidof(IDXGIResource), reinterpret_cast<void**>(&pResource));
+	pResource->GetSharedHandle(&texHandle);
+	pResource->Release();
+	ID3D11Texture2D* SrcTexure = NULL;
+	HRESULT hr = Device->OpenSharedResource(texHandle, __uuidof(ID3D11Texture2D),
+		(LPVOID*)&SrcTexure);
+
+	ID3D11Texture2D* pBackBuffer = NULL;
+	hr = SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
+
+	D3DContext->CopyResource(pBackBuffer, SrcTexure);
+	D3DContext->Flush();
+	SwapChain->Present(1, 0);
+	SrcTexure->Release();
+	pBackBuffer->Release();
+}
+
+LRESULT CALLBACK WndProc(HWND hWnd, uint32 message, WPARAM wParam, LPARAM lParam)
+{
+	PAINTSTRUCT ps;
+	HDC hdc;
+
+	if (GEngine->GameViewport)
+	{
+		FWindowsWindow* Window = (FWindowsWindow*)GEngine->GameViewport->GetWindow()->GetNativeWindow().Get();
+		if (Window)
+		{
+			SendMessage(Window->GetHWnd(), message, wParam, lParam);
+		}
+	}
+
+	switch (message)
+	{
+	case WM_PAINT:
+		hdc = BeginPaint(hWnd, &ps);
+		EndPaint(hWnd, &ps);
+		break;
+
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		break;
+
+	default:
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+
+	return 0;
+}
+
+void FThreeGlassesHMD::InitWindow(HINSTANCE hInst)
+{
+	int Width = HMDResX;
+	int Height = HMDResY;
+
+	int X = HMDDesktopX, Y = HMDDesktopY;
+
+	HINSTANCE HInstance = hInst;
+
+	WNDCLASSEX WndClassEx;
+	ZeroMemory(&WndClassEx, sizeof(WndClassEx));
+	WndClassEx.cbSize = sizeof(WndClassEx);
+	WndClassEx.style = CS_NOCLOSE;
+	WndClassEx.lpfnWndProc = &WndProc;
+	WndClassEx.hIcon = 0;
+	WndClassEx.hCursor = LoadCursor(NULL, IDC_ARROW);
+	WndClassEx.hInstance = HInstance;
+	WndClassEx.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+	WndClassEx.lpszClassName = TEXT("HMD");
+	ATOM WndClassAtom = RegisterClassEx(&WndClassEx);
+
+	unsigned long WindowStyle = WS_VISIBLE | WS_POPUP;
+
+	int winW = Width;
+	int winH = Height;
+
+	RECT WindowRect;
+	ZeroMemory(&WindowRect, sizeof(WindowRect));
+	WindowRect.left = X;
+	WindowRect.top = Y;
+	WindowRect.right = WindowRect.left + winW;
+	WindowRect.bottom = WindowRect.top + winH;
+	AdjustWindowRectEx(&WindowRect, WindowStyle, 0, 0);
+
+	MonitorWindow = CreateWindow(TEXT("HMD"), TEXT("Unreal Engine"),
+		WindowStyle, WindowRect.left, WindowRect.top,
+		WindowRect.right - WindowRect.left, WindowRect.bottom - WindowRect.top,
+		NULL, NULL, HInstance, NULL);
+
+	SetWindowLong(MonitorWindow, GWL_EXSTYLE, GetWindowLong(MonitorWindow, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
+	//ShowWindow(MonitorWindow, SW_HIDE);
+	uint32 createDeviceFlags = 0;
+#ifdef _DEBUG
+	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
+	D3D_FEATURE_LEVEL featureLevels[] =
+	{
+		D3D_FEATURE_LEVEL_11_0,
+	};
+	uint32 numFeatureLevels = ARRAYSIZE(featureLevels);
+
+	DXGI_SWAP_CHAIN_DESC sd;
+	ZeroMemory(&sd, sizeof(sd));
+	sd.BufferCount = 1;
+	sd.BufferDesc.Width = Width;
+	sd.BufferDesc.Height = Height;
+	sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	sd.BufferDesc.RefreshRate.Numerator = 0;
+	sd.BufferDesc.RefreshRate.Denominator = 1;
+	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	sd.OutputWindow = MonitorWindow;
+	sd.SampleDesc.Count = 1;
+	sd.SampleDesc.Quality = 0;
+	sd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+	sd.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
+	sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	sd.Flags = 0;
+	sd.Windowed = true;
+
+	D3D_FEATURE_LEVEL       g_featureLevel = D3D_FEATURE_LEVEL_11_0;
+
+	HRESULT hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, createDeviceFlags, featureLevels, numFeatureLevels,
+		D3D11_SDK_VERSION, &sd, &SwapChain, &Device, &g_featureLevel, &D3DContext);
+
+	SwapChain->SetFullscreenState(true, NULL);
+}
+
+void FThreeGlassesHMD::SetMotionPredictionFactor(bool bPredictionOn, bool bOpenVsync, float scale, int maxFps)
+{
+	if (scale <= 0)
+		return;
+
+	bIsMotionPredictionOn = bPredictionOn;
+	MotionPredictionFactor = scale;
+	SetVsync(bOpenVsync, maxFps);
+}
+
+void FThreeGlassesHMD::SetVsync(bool bOpenVsync, float maxFps)
+{
+	bVsyncOn = bOpenVsync;
+	static IConsoleVariable* CVSyncVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync"));
+	static IConsoleVariable* CMaxFPSVar = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS"));
+	CMaxFPSVar->Set(maxFps);
+	int32 value = bVsyncOn;
+	if (value != CVSyncVar->GetInt())
+	{
+		CVSyncVar->Set(value);
+		UE_LOG(LogClass, Log, TEXT("Vsync Stat: %d"), value);
+	}
+}
+
+void FThreeGlassesHMD::SetStereoEffectParam(float fov, float gazePlane)
+{
+	HFOV = fov;
+	GazePlane = gazePlane;
 }
 #endif //THREE_GLASSES_SUPPORTED_PLATFORMS
