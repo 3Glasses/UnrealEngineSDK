@@ -871,7 +871,6 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 
 	HFOV = 65.0f;
 	GazePlane = 33.95749f;
-	AspectRatio = 1.777778f;
 
 	RECT rect;
 	if (SZVR_FindHMDRect(rect))
@@ -882,6 +881,7 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 		HMDResY = rect.bottom - rect.top;
 	}
 
+	AspectRatio = HMDResX/ HMDResY;
 	Startup();
 	InitDevice();
 	SetVsync(bVsyncOn, 60.0f);
