@@ -1,1 +1,0 @@
-Copy ThreeGlasses and ThreeGlassesInput to GameProject/Plugins,Open Editor Use VRPrivew.
