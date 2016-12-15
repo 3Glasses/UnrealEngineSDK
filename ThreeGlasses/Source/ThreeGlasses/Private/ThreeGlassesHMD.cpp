@@ -870,7 +870,7 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	MotionPredictionFactor = 1.367f;
 
 	HFOV = 65.0f;
-	GazePlane = 33.95749f;
+	GazePlane = 340.0f;
 
 	RECT rect;
 	if (SZVR_FindHMDRect(rect))
@@ -1137,14 +1137,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, uint32 message, WPARAM wParam, LPARAM lParam
 	PAINTSTRUCT ps;
 	HDC hdc;
 
-	if (GEngine->GameViewport)
+	/*if (GEngine->GameViewport)
 	{
 		FWindowsWindow* Window = (FWindowsWindow*)GEngine->GameViewport->GetWindow()->GetNativeWindow().Get();
 		if (Window)
 		{
 			SendMessage(Window->GetHWnd(), message, wParam, lParam);
 		}
-	}
+	}*/
 
 	switch (message)
 	{
