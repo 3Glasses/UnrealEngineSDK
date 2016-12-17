@@ -49,6 +49,6 @@ public:
     * @param    GazePlane	It will affect the Stereo Projection Matrix.
     */
     UFUNCTION(BlueprintCallable, Category = "ThreeGlassesVR")
-    static void SetStereoEffectParam(float HFOV = 65.0f, float GazePlane = 33.95749f);
+    static void SetStereoEffectParam(float HFOV = 65.0f, float GazePlane = 340.f);
 	
 };
