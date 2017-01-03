@@ -59,7 +59,7 @@ namespace UnrealBuildTool.Rules
                 else
                 {
                     PublicLibraryPaths.Add(ThreeGlassesLibPath + "x64");
-                    RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/3GlassesTracker.dll"));
+                    //RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/3GlassesTracker.dll"));
                     PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/SZVR_MEMAPI.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3dx11.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3d11.lib");
