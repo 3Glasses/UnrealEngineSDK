@@ -36,15 +36,49 @@ class FThreeGlassesPlugin : public IThreeGlassesPlugin
 public:
 
 };
-
-typedef bool(WINAPI * InitDirectModeFunc)(char* ErrorMsg, int msgLength, int &SurfaceFormat);
-typedef void(WINAPI * DirectModePresentFunc)(struct ID3D11Texture2D* srcTexture);
-typedef void(WINAPI * ClearDirectModeFunc)();
-InitDirectModeFunc InitDirectMode = NULL;
-DirectModePresentFunc DirectModePresent = NULL;
-ClearDirectModeFunc ClearDirectMode = NULL;
-
 IMPLEMENT_MODULE(FThreeGlassesPlugin, ThreeGlasses)
+
+typedef int(*DevicesFunc)();
+typedef int(*StartTrackingFunc)(void* hmdCallBack, void* wandCallBack);
+DevicesFunc InitDevices = NULL;
+DevicesFunc FinishTracking = NULL;
+DevicesFunc ReleaseDevices = NULL;
+StartTrackingFunc StartTracking = NULL;
+
+static bool LoadTrackDll()
+{
+	FString DllPath;
+	FString PluginPath = FPaths::GamePluginsDir();
+	TArray<FString> FileNames;
+	IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
+	if (FileNames.Num() == 0)
+	{
+		PluginPath = FPaths::EnginePluginsDir();
+		IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
+	}
+
+	check(FileNames.Num() > 0);
+	DllPath = FileNames[0];
+
+	DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\x64\\3GlassesTracker.dll"));
+	HMODULE hModule = LoadLibrary(*DllPath);
+	if (!hModule)
+	{
+		return false;
+	}
+
+	InitDevices = (DevicesFunc)GetProcAddress(hModule, "InitDevices");
+	StartTracking = (StartTrackingFunc)GetProcAddress(hModule, "StartTracking");
+	FinishTracking = (DevicesFunc)GetProcAddress(hModule, "FinishTracking");
+	ReleaseDevices = (DevicesFunc)GetProcAddress(hModule, "ReleaseDevices");
+
+	if (InitDevices&&StartTracking&&FinishTracking&&ReleaseDevices)
+	{
+		return true;
+	}
+
+	return false;
+}
 
 TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > FThreeGlassesPlugin::CreateHeadMountedDisplay()
 {
@@ -78,11 +112,6 @@ EHMDDeviceType::Type FThreeGlassesHMD::GetHMDDeviceType() const
 
 bool FThreeGlassesHMD::GetHMDMonitorInfo(MonitorInfo& MonitorDesc)
 {
-	if (IsInitialized())
-	{
-		InitDevice();
-	}
-
 	MonitorDesc.MonitorName = FString(TEXT("ThreeGlasses"));
 	MonitorDesc.MonitorId = 0;
 	MonitorDesc.DesktopX = HMDDesktopX;
@@ -145,7 +174,7 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 		FVector loc(0, 0, 0);
 		if (SZVR_GetHMDPos(&loc.X))
 		{
-			LastPosition = FVector(-loc.Z, loc.X, loc.Y)*0.1f;
+			LastPosition = FVector(-loc.Z, loc.X, loc.Y)/7.f;
 			LastPosition = ClampVector(LastPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
 		}
 		CurrentHmdPosition = LastPosition;
@@ -676,14 +705,7 @@ void FThreeGlassesHMD::RenderTexture_RenderThread(class FRHICommandListImmediate
 	check(IsInRenderingThread());
 
 	RenderMirrorToBackBuffer(rhiCmdList, backBuffer);
-
-	if (bDirectMode)
-	{
-		DirectModePresent((ID3D11Texture2D*)srcTexture->GetNativeResource());
-	}
-	else
-		MonitorPresent((ID3D11Texture2D*)srcTexture->GetNativeResource());
-
+	MonitorPresent((ID3D11Texture2D*)srcTexture->GetNativeResource());
 }
 
 #if PLATFORM_WINDOWS
@@ -772,105 +794,75 @@ void FThreeGlassesHMD::PreRenderViewFamily_RenderThread(FRHICommandListImmediate
 
 void FThreeGlassesHMD::Startup()
 {
+	static const FName RendererModuleName("Renderer");
+	RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
+
+	UpdateStereoRenderingParams();
+
 	// grab a pointer to the renderer module for displaying our mirror window
 	GEngine->bSmoothFrameRate = false;
 	static IConsoleVariable* CVSyncVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync"));
 	CVSyncVar->Set(true);
 
-	if (IsPCPlatform(GMaxRHIShaderPlatform) && !IsOpenGLPlatform(GMaxRHIShaderPlatform))
-	{
-		if (bDirectMode)
-		{
-			FString DllPath;
-			FString PluginPath = FPaths::GamePluginsDir();
-			TArray<FString> FileNames;
-			IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
-			if (FileNames.Num() == 0)
-			{
-				PluginPath = FPaths::EnginePluginsDir();
-				IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
-			}
-
-			check(FileNames.Num() > 0);
-			DllPath = FileNames[0];
-
-#if _WIN64
-			DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\x64\\D3D11Present.dll"));
-#elif _WIN32
-			DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\win32\\D3D11Present.dll"));
-#endif
-			HMODULE hModule = LoadLibrary(*DllPath);
-			if (!hModule)
-			{
-				FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("DirectMode dll load failed!!")));
-			}
-
-			InitDirectMode = (InitDirectModeFunc)GetProcAddress(hModule, "InitDirectMode");
-			DirectModePresent = (DirectModePresentFunc)GetProcAddress(hModule, "DirectModePresent");
-			ClearDirectMode = (ClearDirectModeFunc)GetProcAddress(hModule, "ClearDirectMode");
-
-			char Msg[256] = { 0 };
-
-			if (!InitDirectMode(Msg, 256, DxgiFormat))
-				bDirectMode = false;
-		}
-
-		if (!bDirectMode)
-		{
-			InitWindow(GetModuleHandle(NULL));
-		}
-	}
+	SetVsync(bVsyncOn, 60.0f);
 }
 
 void FThreeGlassesHMD::Shutdown()
 {
-	if (bDirectMode)
-		ClearDirectMode();
-	else
-	{
+	if(MonitorWindow)
 		DestroyWindow(MonitorWindow);
-		UnregisterClass(TEXT("HMD"), GetModuleHandle(NULL));
-		if (SwapChain)
-		{
-			SwapChain->SetFullscreenState(false, nullptr);
-			SwapChain->Release();
-			SwapChain = NULL;
-		}
 
-		if (D3DContext)
-		{
-			D3DContext->ClearState();
-			D3DContext->Release();
-			D3DContext = NULL;
-		}
-
-		if (Device)
-		{
-			Device->Release();
-			Device = NULL;
-		}
+	UnregisterClass(TEXT("HMD"), GetModuleHandle(NULL));
+	if (SwapChain)
+	{
+		SwapChain->SetFullscreenState(false, nullptr);
+		SwapChain->Release();
+		SwapChain = NULL;
 	}
+
+	if (D3DContext)
+	{
+		D3DContext->ClearState();
+		D3DContext->Release();
+		D3DContext = NULL;
+	}
+
+	if (Device)
+	{
+		Device->Release();
+		Device = NULL;
+	}
+
+	if (FinishTracking)
+		FinishTracking();
+	if (ReleaseDevices)
+		ReleaseDevices();
 }
 
 FThreeGlassesHMD::FThreeGlassesHMD() :
 	BaseOrientation(FQuat::Identity),
 	DeltaControlRotation(FRotator::ZeroRotator),
 	DeltaControlOrientation(FQuat::Identity),
-	ScreenPercentage(1.0f)
+	ScreenPercentage(1.0f),
+	AspectRatio(2)
 {
 	Flags.Raw = 0;
 	Flags.bHmdDistortion = true;
 	Flags.bHMDEnabled = true;
 
 	InterpupillaryDistance = 0.1;
-	//HFOVInRadians = PI*90.f / 360.f;// Hmd->CameraFrustumHFovInRadians;
-	//VFOVInRadians = PI*90.f / 360.f;// Hmd->CameraFrustumVFovInRadians;
 	bVsyncOn = true;
 	bIsMotionPredictionOn = true;
 	MotionPredictionFactor = 1.367f;
-
 	HFOV = 65.0f;
-	GazePlane = 33.95749f;
+	GazePlane = 340.0f;
+
+	// load server dll
+	if (LoadTrackDll())
+	{
+		InitDevices();
+		StartTracking(NULL, NULL);
+	}
 
 	RECT rect;
 	if (SZVR_FindHMDRect(rect))
@@ -879,12 +871,16 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 		HMDDesktopY = rect.top;
 		HMDResX = rect.right - rect.left;
 		HMDResY = rect.bottom - rect.top;
+		AspectRatio = (float)HMDResX / (float)HMDResY;
+		InitWindow(GetModuleHandle(NULL));
+	}
+	else
+	{
+		::MessageBox(0, L"HMDDevice is not Connect!!", L"Error", MB_OK);
+		Flags.bHMDEnabled = false;
 	}
 
-	AspectRatio = HMDResX/ HMDResY;
 	Startup();
-	InitDevice();
-	SetVsync(bVsyncOn, 60.0f);
 }
 
 FThreeGlassesHMD::~FThreeGlassesHMD()
@@ -894,16 +890,6 @@ FThreeGlassesHMD::~FThreeGlassesHMD()
 
 bool FThreeGlassesHMD::IsInitialized() const
 {
-	return true;
-}
-
-bool FThreeGlassesHMD::InitDevice()
-{
-	static const FName RendererModuleName("Renderer");
-	RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
-
-	UpdateStereoRenderingParams();
-
 	return true;
 }
 
@@ -1025,9 +1011,7 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	textureDesc.Height = sizeY;
 	textureDesc.MipLevels = numMips;
 	textureDesc.ArraySize = 1;
-	//textureDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 	textureDesc.Format = platformResourceFormat;
-	//textureDesc.Format = platformResourceFormat;
 	textureDesc.SampleDesc.Count = numSamples;
 	textureDesc.SampleDesc.Quality = numSamples > 0 ? D3D11_STANDARD_MULTISAMPLE_PATTERN : 0;
 	textureDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -1044,8 +1028,6 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
 	memset(&renderTargetViewDesc, 0, sizeof(renderTargetViewDesc));
 	// This must match what was created in the texture to be rendered
-	//renderTargetViewDesc.Format = renderTextureDesc.Format;
-	//renderTargetViewDesc.Format = textureDesc.Format;
 	renderTargetViewDesc.Format = platformShaderResourceFormat;
 	renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
 	renderTargetViewDesc.Texture2D.MipSlice = 0;
@@ -1112,6 +1094,11 @@ void FThreeGlassesHMD::UpdateViewport(bool bUseSeparateRenderTarget, const FView
 
 void FThreeGlassesHMD::MonitorPresent(ID3D11Texture2D* tex2d) const
 {
+	if (!Device)
+	{
+		return;
+	}
+
 	HANDLE texHandle = 0;
 
 	IDXGIResource* pResource;
@@ -1136,15 +1123,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, uint32 message, WPARAM wParam, LPARAM lParam
 {
 	PAINTSTRUCT ps;
 	HDC hdc;
-
-	if (GEngine->GameViewport)
-	{
-		FWindowsWindow* Window = (FWindowsWindow*)GEngine->GameViewport->GetWindow()->GetNativeWindow().Get();
-		if (Window)
-		{
-			SendMessage(Window->GetHWnd(), message, wParam, lParam);
-		}
-	}
 
 	switch (message)
 	{

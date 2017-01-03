@@ -23,22 +23,12 @@ public class ThreeGlassesInput : ModuleRules
 			}
 			);
 
-      //  PrivateIncludePathModuleNames.AddRange(
-      //      new string[]
-      //      {
-      //          "InputDevice",			// For IInputDevice.h
-		    //}
-      //      );
-
-
         PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"Core",
                 "CoreUObject",
                 "Engine",
-    //            "InputCore",        // Provides LOCTEXT and other Input features
-				//"InputDevice",      // Provides IInputInterface
                 "HeadMountedDisplay",
 				// ... add other public dependencies that you statically link with here ...
 			}
@@ -50,8 +40,6 @@ public class ThreeGlassesInput : ModuleRules
                 "Core",
 				"CoreUObject",
 				"Engine",
-    //            "InputCore",        // Provides LOCTEXT and other Input features
-				//"InputDevice",      // Provides IInputInterface
                 "HeadMountedDisplay",
                 "Slate",
 				"SlateCore",

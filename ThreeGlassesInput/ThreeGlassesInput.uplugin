@@ -10,7 +10,7 @@
 	"DocsURL": "",
 	"MarketplaceURL": "",
 	"SupportURL": "",
-	"EnabledByDefault": true,
+	"EnabledByDefault": false,
 	"CanContainContent": false,
 	"IsBetaVersion": false,
 	"Installed": true,
@@ -18,11 +18,7 @@
 		{
 			"Name": "ThreeGlassesInput",
 			"Type" : "Runtime",
-			"LoadingPhase": "Default",
-			"WhitelistPlatforms" :
-			[
-				"Win64"
-			]
+			"LoadingPhase": "Default"
 		}
 	]
 }

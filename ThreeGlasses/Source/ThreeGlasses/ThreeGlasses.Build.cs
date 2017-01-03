@@ -53,17 +53,13 @@ namespace UnrealBuildTool.Rules
                 if (Target.Platform == UnrealTargetPlatform.Win32)
                 {
                     PublicLibraryPaths.Add(ThreeGlassesLibPath + "win32");
-                   // PublicAdditionalLibraries.Add("ThreeGlasses.lib");
-  
-                    RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "win32/D3D11Present.dll"));
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x86/d3dx11.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x86/d3d11.lib");
                 }
                 else
                 {
                     PublicLibraryPaths.Add(ThreeGlassesLibPath + "x64");
-              
-                    RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/D3D11Present.dll"));
+                    RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/3GlassesTracker.dll"));
                     PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/SZVR_MEMAPI.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3dx11.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3d11.lib");
