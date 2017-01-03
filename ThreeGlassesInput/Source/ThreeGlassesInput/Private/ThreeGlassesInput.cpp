@@ -11,7 +11,6 @@
 
 #define LOCTEXT_NAMESPACE "FThreeGlassesInputModule"
 
-
 const int ButtonNum = 12;
 class F3GlassesController : public IInputDevice, public IMotionController, public IHapticDevice
 {
@@ -50,11 +49,11 @@ public:
 		{
 		case EControllerHand::Left:
 			DeviceOrientation = FQuat(RotData[0], RotData[1], RotData[2], RotData[3]);
-			OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4])*0.1f;
+			OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1])/7.f;
 			break;
 		case EControllerHand::Right:
 			DeviceOrientation = FQuat(RotData[4], RotData[5], RotData[6], RotData[7]);
-			OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1])*0.1f;
+			OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4])/7.f;
 			break;
 		default:
 			return false;

@@ -116,7 +116,6 @@ public:
 
 	/** @return	True if the HMD was initialized OK */
 	bool IsInitialized() const;
-	bool InitDevice();
 	void UpdateStereoRenderingParams();
 	void ApplySystemOverridesOnStereo(bool force = false);
 	FString GetVersionString() const;
@@ -134,7 +133,6 @@ public:
 	int32									HMDDesktopY = 0;
 	int32									HMDResX = 2880;
 	int32									HMDResY = 1440;
-	bool									bDirectMode = false;
 	IDXGISwapChain*							SwapChain = NULL;
 	ID3D11Device*							Device = NULL;
 	ID3D11DeviceContext*					D3DContext = NULL;
