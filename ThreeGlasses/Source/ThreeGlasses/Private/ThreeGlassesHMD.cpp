@@ -804,7 +804,7 @@ void FThreeGlassesHMD::Startup()
 	static IConsoleVariable* CVSyncVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync"));
 	CVSyncVar->Set(true);
 
-	SetVsync(bVsyncOn, 60.0f);
+	SetVsync(bVsyncOn, 120.f);
 }
 
 void FThreeGlassesHMD::Shutdown()
