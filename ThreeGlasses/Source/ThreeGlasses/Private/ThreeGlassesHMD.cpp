@@ -2,7 +2,6 @@
 
 #include "Runtime/Launch/Resources/Version.h"
 #include "Runtime/Renderer/Private/RendererPrivate.h"
-#include "Runtime/Renderer/Private/ScenePrivate.h"
 #include "Runtime/RenderCore/Public/RenderUtils.h"
 #include "Runtime/Engine/Public/ScreenRendering.h"
 #include "Runtime/Renderer/Private/PostProcess/PostProcessing.h"
@@ -91,9 +90,15 @@ TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > FThreeGlassesPlugin
 	return NULL;
 }
 
+TSharedPtr<FHMDSettings, ESPMode::ThreadSafe> FThreeGlassesHMD::CreateNewSettings() const
+{
+	TSharedPtr<FHMDSettings, ESPMode::ThreadSafe> Result(MakeShareable(new FHMDSettings()));
+	return Result;
+}
+
 bool FThreeGlassesHMD::IsHMDEnabled() const
 {
-	return Flags.bHMDEnabled;
+	return Settings->Flags.bHMDEnabled;
 }
 
 void FThreeGlassesHMD::RebaseObjectOrientationAndPosition(FVector& Position, FQuat& Orientation) const
@@ -102,7 +107,7 @@ void FThreeGlassesHMD::RebaseObjectOrientationAndPosition(FVector& Position, FQu
 
 void FThreeGlassesHMD::EnableHMD(bool enable)
 {
-	Flags.bHMDEnabled = enable;
+	Settings->Flags.bHMDEnabled = enable;
 }
 
 EHMDDeviceType::Type FThreeGlassesHMD::GetHMDDeviceType() const
@@ -141,6 +146,12 @@ void FThreeGlassesHMD::GetPositionalTrackingCameraProperties(FVector& OutOrigin,
 {
 }
 
+TSharedPtr<FHMDGameFrame, ESPMode::ThreadSafe> FThreeGlassesHMD::CreateNewGameFrame() const
+{
+	TSharedPtr<FHMDGameFrame, ESPMode::ThreadSafe> Result(MakeShareable(new FHMDGameFrame()));
+	return Result;
+}
+
 void FThreeGlassesHMD::SetInterpupillaryDistance(float NewInterpupillaryDistance)
 {
 	InterpupillaryDistance = NewInterpupillaryDistance;
@@ -152,7 +163,8 @@ float FThreeGlassesHMD::GetInterpupillaryDistance() const
 	return InterpupillaryDistance;
 }
 
-void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition)
+void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition, 
+	bool bUseOrienationForPlayerCamera, bool bUsePositionForPlayerCamera)
 {
 	if (IsHMDConnected())
 	{
@@ -174,7 +186,7 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 		FVector loc(0, 0, 0);
 		if (SZVR_GetHMDPos(&loc.X))
 		{
-			LastPosition = FVector(-loc.Z, loc.X, loc.Y)/7.f;
+			LastPosition = FVector(-loc.Z, loc.X, loc.Y)/10.0f;
 			LastPosition = ClampVector(LastPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
 		}
 		CurrentHmdPosition = LastPosition;
@@ -397,8 +409,6 @@ void FThreeGlassesHMD::UpdateStereoRenderingParams()
 				DistorMesh[eyeIndex].pIndices[i] = Indices[i];
 			}
 		}
-
-		Flags.bNeedUpdateStereoRenderingParams = false;
 	}
 }
 
@@ -448,13 +458,13 @@ void FThreeGlassesHMD::DrawDistortionMesh_RenderThread(struct FRenderingComposit
 
 	const FDistortionMesh& distMesh = DistorMesh[(View.StereoPass == eSSP_LEFT_EYE) ? szvrEye_Left : szvrEye_Right];
 
-	if ((!Flags.bNotRenderLeft && View.StereoPass == eSSP_LEFT_EYE) || (!Flags.bNotRenderRight && View.StereoPass == eSSP_RIGHT_EYE))
+	if ((View.StereoPass == eSSP_LEFT_EYE) || (View.StereoPass == eSSP_RIGHT_EYE))
 	{
 		DrawIndexedPrimitiveUP(Context.RHICmdList, PT_TriangleList, 0, distMesh.NumVertices, distMesh.NumTriangles, distMesh.pIndices,
 			sizeof(int), distMesh.pVerticesCached, sizeof(FDistortionVertex));
 	}
 
-	if (View.StereoPass == eSSP_LEFT_EYE)
+	if (View.StereoPass == eSSP_LEFT_EYE&&MirrorTexture != NULL)
 	{
 		FRenderingCompositeOutputRef*  OutputRef = Context.Pass->GetInput(ePId_Input0);
 		FRenderingCompositePass* Source = *(FRenderingCompositePass**)(OutputRef);
@@ -486,14 +496,11 @@ void FThreeGlassesHMD::DrawDebug(UCanvas* Canvas)
 {
 #if !UE_BUILD_SHIPPING
 	check(IsInGameThread());
-	if (!Flags.bDrawGrid) return;
+	if (!Settings->Flags.bDrawGrid) return;
 	const FColor cLeft(0, 128, 255);
 	const FColor cRight(0, 255, 0);
 	for (int eyeIndex = szvrEye_Left; eyeIndex < szvrEye_Count; ++eyeIndex)
 	{
-		if (Flags.bNotRenderLeft && eyeIndex == szvrEye_Left || Flags.bNotRenderRight && eyeIndex == szvrEye_Right)
-			continue;
-
 		float x[2], y[2];
 		for (int i = 0; i < DistorMesh[eyeIndex].NumTriangles; i++)
 		{
@@ -520,16 +527,16 @@ void FThreeGlassesHMD::DrawDebug(UCanvas* Canvas)
 
 bool FThreeGlassesHMD::IsStereoEnabled() const
 {
-	return Flags.bStereoEnabled && Flags.bHMDEnabled;
+	return Settings->Flags.bStereoEnabled && Settings->Flags.bHMDEnabled;
 }
 
 bool FThreeGlassesHMD::EnableStereo(bool stereo)
 {
 	bool NewEnable = (IsHMDEnabled()) ? stereo : false;
-	if (Flags.bStereoEnabled == NewEnable)
-		return Flags.bStereoEnabled;
+	if (Settings->Flags.bStereoEnabled == NewEnable)
+		return Settings->Flags.bStereoEnabled;
 
-	Flags.bStereoEnabled = NewEnable;
+	Settings->Flags.bStereoEnabled = NewEnable;
 	FSceneViewport* sceneViewport;
 	if (!GIsEditor)
 	{
@@ -558,7 +565,7 @@ bool FThreeGlassesHMD::EnableStereo(bool stereo)
 		return false;
 	}
 
-	if (Flags.bStereoEnabled)
+	if (Settings->Flags.bStereoEnabled)
 	{
 		auto window = sceneViewport->FindWindow();
 
@@ -580,7 +587,7 @@ bool FThreeGlassesHMD::EnableStereo(bool stereo)
 		}
 	}
 
-	return Flags.bStereoEnabled;
+	return Settings->Flags.bStereoEnabled;
 }
 
 void FThreeGlassesHMD::AdjustViewRect(EStereoscopicPass StereoPass, int32& X, int32& Y, uint32& SizeX, uint32& SizeY) const
@@ -601,26 +608,31 @@ void FThreeGlassesHMD::CalculateStereoViewOffset(const enum EStereoscopicPass St
 		float EyeOffset = (GetInterpupillaryDistance() * WorldToMeters) / 2.0f;
 		const float PassOffset = (StereoPassType == eSSP_LEFT_EYE) ? -EyeOffset : EyeOffset;
 		ViewLocation += ViewRotation.Quaternion().RotateVector(FVector(0, PassOffset, 0));
-		FQuat CurHmdOrientation;
-		FVector CurHmdPosition;
-		GetCurrentPose(CurHmdOrientation, CurHmdPosition);
-		const FVector vHMDPosition = DeltaControlOrientation.RotateVector(CurHmdPosition);
-		ViewLocation += vHMDPosition;
+
+		if (!bImplicitHmdPosition)
+		{
+			FQuat CurHmdOrientation;
+			FVector CurHmdPosition;
+			GetCurrentPose(CurHmdOrientation, CurHmdPosition);
+			const FVector vHMDPosition = DeltaControlOrientation.RotateVector(CurHmdPosition);
+			ViewLocation += vHMDPosition;
+		}
 	}
 }
 
 FMatrix FThreeGlassesHMD::GetStereoProjectionMatrix(const enum EStereoscopicPass StereoPassType, const float FOV) const
 {
-	//const float ProjectionCenterOffset = 0.1f;
-	//const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
+#if 0
+	const float ProjectionCenterOffset = 0.1f;
+	const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
 
-	//return FMatrix(
-	//	FPlane(FMath::Tan(0.5*PI - HFOVInRadians), 0.0f, 0.0f, 0.0f),
-	//	FPlane(0.0f, FMath::Tan(0.5*PI - HFOVInRadians), 0.0f, 0.0f),
-	//	FPlane(0.0f, 0.0f, 0.0f, 1.0f),
-	//	FPlane(0.0f, 0.0f, GNearClippingPlane, 0.0f))
-	//	* FTranslationMatrix(FVector(PassProjectionOffset, 0, 0));
-
+	return FMatrix(
+		FPlane(FMath::Tan(0.5*PI - HFOV * PI / 180.0f), 0.0f, 0.0f, 0.0f),
+		FPlane(0.0f, FMath::Tan(0.5*PI - HFOV * PI / 180.0f), 0.0f, 0.0f),
+		FPlane(0.0f, 0.0f, 0.0f, 1.0f),
+		FPlane(0.0f, 0.0f, GNearClippingPlane, 0.0f))
+		* FTranslationMatrix(FVector(PassProjectionOffset, 0, 0));
+#else
 	float ZNear = GNearClippingPlane;
 	float wd = ZNear * FMath::Abs(FMath::Tan(HFOV * PI / 180.0f * 0.5f) * 2.0f);
 	float r = wd;
@@ -653,6 +665,7 @@ FMatrix FThreeGlassesHMD::GetStereoProjectionMatrix(const enum EStereoscopicPass
 	);
 
 	return Mat;
+#endif
 }
 
 void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
@@ -731,7 +744,7 @@ void FThreeGlassesHMD::GetEyeRenderParams_RenderThread(const FRenderingComposite
 void FThreeGlassesHMD::SetupViewFamily(FSceneViewFamily& InViewFamily)
 {
 	InViewFamily.EngineShowFlags.MotionBlur = 0;
-	InViewFamily.EngineShowFlags.HMDDistortion = Flags.bHmdDistortion;
+	InViewFamily.EngineShowFlags.HMDDistortion = Settings->Flags.bHmdDistortion;
 	InViewFamily.EngineShowFlags.ScreenPercentage = 1.0f;
 	InViewFamily.EngineShowFlags.StereoRendering = IsStereoEnabled();
 }
@@ -846,9 +859,10 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	ScreenPercentage(1.0f),
 	AspectRatio(2)
 {
-	Flags.Raw = 0;
-	Flags.bHmdDistortion = true;
-	Flags.bHMDEnabled = true;
+	Settings = CreateNewSettings();
+	Settings->Flags.Raw = 0;
+	Settings->Flags.bHmdDistortion = true;
+	Settings->Flags.bHMDEnabled = true;
 
 	InterpupillaryDistance = 0.1;
 	bVsyncOn = true;
@@ -877,10 +891,15 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	else
 	{
 		::MessageBox(0, L"HMDDevice is not Connect!!", L"Error", MB_OK);
-		Flags.bHMDEnabled = false;
+		Settings->Flags.bHMDEnabled = false;
 	}
 
 	Startup();
+}
+
+bool FThreeGlassesHMD::DoEnableStereo(bool bStereo)
+{
+	return EnableStereo(bStereo);
 }
 
 FThreeGlassesHMD::~FThreeGlassesHMD()
@@ -1249,4 +1268,8 @@ void FThreeGlassesHMD::SetStereoEffectParam(float fov, float gazePlane)
 	HFOV = fov;
 	GazePlane = gazePlane;
 }
+
+
+#define OCULUS_STRESS_TESTS_ENABLED 0
+#include <HeadMountedDisplayCommon.cpp>
 #endif //THREE_GLASSES_SUPPORTED_PLATFORMS

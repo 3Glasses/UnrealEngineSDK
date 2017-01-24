@@ -45,6 +45,20 @@ float UThreeGlassBPFunctionLibrary::GetHMDInterpupillaryDistance()
     return IPD;
 }
 
+void UThreeGlassBPFunctionLibrary::GetHMDPositionAndOrientation(FVector& OutPosition, FRotator& OutOrientation)
+{
+#if THREE_GLASSES_SUPPORTED_PLATFORMS
+	FThreeGlassesHMD* HMD = GetThreeGlassesHMD();
+	if (HMD != nullptr)
+	{
+		FQuat Orientation;
+		HMD->GetCurrentOrientationAndPosition(Orientation, OutPosition);
+		OutOrientation = Orientation.Rotator();
+	}
+#endif // THREE_GLASSES_SUPPORTED_PLATFORMS
+}
+
+
 //For D2, Motion Prediction
 void UThreeGlassBPFunctionLibrary::SetHMDMotionPredictionFactor(bool bMotionPredictionOn, bool bVsyncOn, float PredictionFactor, int MaxFPS)
 {

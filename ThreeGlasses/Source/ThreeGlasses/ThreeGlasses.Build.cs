@@ -10,8 +10,12 @@ namespace UnrealBuildTool.Rules
 		{
 			PrivateIncludePaths.AddRange(
 				new string[] {
-					"ThreeGlasses/Private"
-				}
+					"ThreeGlasses/Private",
+                    UnrealBuildTool.EngineSourceDirectory + "/Runtime/Renderer/Private",
+                    UnrealBuildTool.EngineSourceDirectory + "/Runtime/UtilityShaders/Public",
+                    UnrealBuildTool.EngineSourceDirectory + "/ThirdParty/Oculus/Common",
+                    UnrealBuildTool.EngineSourceDirectory + "/Runtime/Engine/Public"
+                }
 				);
 
 			PrivateDependencyModuleNames.AddRange(
@@ -25,14 +29,15 @@ namespace UnrealBuildTool.Rules
 					"RenderCore",
 					"Renderer",
 					"ShaderCore",
-					"HeadMountedDisplay",
-					"Slate",
+                    "HeadMountedDisplay",
+                    "Slate",
 					"SlateCore",
+                    "UtilityShaders",
                     "D3D11RHI"
                 }
 				);
 
-			if (UEBuildConfiguration.bBuildEditor == true)
+            if (UEBuildConfiguration.bBuildEditor == true)
 			{
 				PrivateDependencyModuleNames.Add("UnrealEd");
 			}
@@ -59,12 +64,12 @@ namespace UnrealBuildTool.Rules
                 else
                 {
                     PublicLibraryPaths.Add(ThreeGlassesLibPath + "x64");
-                    //RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/3GlassesTracker.dll"));
+                    RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/3GlassesTracker.dll"));
                     PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/SZVR_MEMAPI.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3dx11.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3d11.lib");
                 }
             }
-		}
+        }
 	}
 }
