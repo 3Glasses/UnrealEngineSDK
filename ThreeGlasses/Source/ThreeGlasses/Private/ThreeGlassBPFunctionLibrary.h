@@ -51,6 +51,4 @@ public:
     UFUNCTION(BlueprintCallable, Category = "ThreeGlassesVR")
     static void SetStereoEffectParam(float HFOV = 65.0f, float GazePlane = 340.f);
 	
-	UFUNCTION(BlueprintCallable, Category = "ThreeGlassesVR")
-	static void GetHMDPositionAndOrientation(FVector& OutPosition, FRotator& OutOrientation);
 };

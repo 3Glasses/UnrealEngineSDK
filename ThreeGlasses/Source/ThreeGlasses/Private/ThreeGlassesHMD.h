@@ -10,10 +10,7 @@
 #endif
 
 #include "IThreeGlassesPlugin.h"
-#include "ScenePrivate.h"
 #include "HeadMountedDisplay.h"
-#include "IHeadMountedDisplay.h"
-#include "HeadMountedDisplayCommon.h"
 
 #include "SceneViewExtension.h"
 
@@ -25,7 +22,7 @@
 #define THREE_GLASSES_SUPPORTED_PLATFORMS 1//(PLATFORM_WINDOWS && WINVER > 0x0502)
 #if THREE_GLASSES_SUPPORTED_PLATFORMS
 
-class FThreeGlassesHMD : public FHeadMountedDisplay, public ISceneViewExtension, public TSharedFromThis < FThreeGlassesHMD, ESPMode::ThreadSafe >
+class FThreeGlassesHMD : public IHeadMountedDisplay, public ISceneViewExtension, public TSharedFromThis < FThreeGlassesHMD, ESPMode::ThreadSafe >
 {
 public:
 	/** IHeadMountedDisplay interface */
@@ -130,12 +127,6 @@ public:
 		return IsStereoEnabled();
 	}
 
-	virtual bool OnStartGameFrame(FWorldContext& WorldContext) override { return true; }
-	virtual bool OnEndGameFrame(FWorldContext& WorldContext) override { return true; }
-protected:
-	virtual TSharedPtr<FHMDGameFrame, ESPMode::ThreadSafe> CreateNewGameFrame() const override;
-	virtual TSharedPtr<FHMDSettings, ESPMode::ThreadSafe> CreateNewSettings() const override;
-	virtual bool DoEnableStereo(bool bStereo) override;
 public:
 	FTexture2DRHIRef			            MirrorTexture = NULL;
 	int32									HMDDesktopX = 0;
@@ -201,7 +192,68 @@ private:
 	};
 
 	typedef uint64 bool64;
-	
+	union
+	{
+		struct
+		{
+			uint64 InitStatus : 2; // see bitmask EInitStatus
+
+			/** Whether stereo is currently on or off. */
+			bool64 bStereoEnabled : 1;
+
+			/** Whether or not switching to stereo is allowed */
+			bool64 bHMDEnabled : 1;
+
+			/** Indicates if it is necessary to update stereo rendering params */
+			bool64 bNeedUpdateStereoRenderingParams : 1;
+
+			/** Debugging:  Whether or not the stereo rendering settings have been manually overridden by an exec command.  They will no longer be auto-calculated */
+			bool64 bOverrideStereo : 1;
+
+			/** Debugging:  Whether or not the IPD setting have been manually overridden by an exec command. */
+			bool64 bOverrideIPD : 1;
+
+			/** Debugging:  Whether or not the distortion settings have been manually overridden by an exec command.  They will no longer be auto-calculated */
+			bool64 bOverrideDistortion : 1;
+
+			/** Debugging: Allows changing internal params, such as screen size, eye-to-screen distance, etc */
+			bool64 bDevSettingsEnabled : 1;
+
+			bool64 bOverrideFOV : 1;
+
+			/** Whether or not to override game VSync setting when switching to stereo */
+			bool64 bOverrideVSync : 1;
+
+			/** Overridden VSync value */
+			bool64 bVSync : 1;
+
+			/** Saved original values for VSync and ScreenPercentage. */
+			bool64 bSavedVSync : 1;
+
+			/** Whether or not to override game ScreenPercentage setting when switching to stereo */
+			bool64 bOverrideScreenPercentage : 1;
+
+			/** Allows renderer to finish current frame. Setting this to 'true' may reduce the total
+			*  framerate (if it was above vsync) but will reduce latency. */
+			bool64 bAllowFinishCurrentFrame : 1;
+
+			/** Whether world-to-meters scale is overriden or not. */
+			bool64 bWorldToMetersOverride : 1;
+
+			/** Distortion on/off */
+			bool64 bHmdDistortion : 1;
+
+			/** Debug left eye */
+			bool64 bNotRenderLeft : 1;
+
+			/** Debug right eye */
+			bool64 bNotRenderRight : 1;
+
+			bool64 bDrawGrid : 1;
+		};
+		uint64 Raw;
+	} Flags;
+
 	float WorldToMetersScale;
 	float ScreenPercentage;
 
@@ -231,7 +283,7 @@ private:
 	HANDLE					hThread = 0;
 	FDistortionMesh DistorMesh[2];
 
-	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition, bool bUseOrienationForPlayerCamera = false, bool bUsePositionForPlayerCamera = false) override;
+	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition);
 	void SetVsync(bool bOpenVsync, float maxFps);
 };
 #endif //THREE_GLASSES_SUPPORTED_PLATFORMS
