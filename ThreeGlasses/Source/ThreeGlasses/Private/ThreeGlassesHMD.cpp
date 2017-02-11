@@ -601,11 +601,15 @@ void FThreeGlassesHMD::CalculateStereoViewOffset(const enum EStereoscopicPass St
 		float EyeOffset = (GetInterpupillaryDistance() * WorldToMeters) / 2.0f;
 		const float PassOffset = (StereoPassType == eSSP_LEFT_EYE) ? -EyeOffset : EyeOffset;
 		ViewLocation += ViewRotation.Quaternion().RotateVector(FVector(0, PassOffset, 0));
-		FQuat CurHmdOrientation;
-		FVector CurHmdPosition;
-		GetCurrentPose(CurHmdOrientation, CurHmdPosition);
-		const FVector vHMDPosition = DeltaControlOrientation.RotateVector(CurHmdPosition);
-		ViewLocation += vHMDPosition;
+	
+		if (!bImplicitHmdPosition)
+		{
+			FQuat CurHmdOrientation;
+			FVector CurHmdPosition;
+			GetCurrentPose(CurHmdOrientation, CurHmdPosition);
+			const FVector vHMDPosition = DeltaControlOrientation.RotateVector(CurHmdPosition);
+			ViewLocation += vHMDPosition;
+		}
 	}
 }
 
@@ -907,7 +911,6 @@ void FThreeGlassesHMD::CalculateRenderTargetSize(const class FViewport& Viewport
 	check(IsInGameThread());
 	InOutSizeX = HMDResX;
 	InOutSizeY = HMDResY;
-	//SZVR_Get3GlassesResolution((char*)&InOutSizeX, (char*)&InOutSizeY);
 }
 
 bool FThreeGlassesHMD::AllocateMirrorTexture()
