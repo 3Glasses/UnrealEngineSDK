@@ -11,6 +11,7 @@
 #include "DrawDebugHelpers.h"
 #include "Runtime/Windows/D3D11RHI/Private/D3D11RHIPrivate.h"
 #include "Runtime/Core/Public/Windows/WindowsWindow.h"
+#include "SDKCore.h"
 #if WITH_EDITOR
 #include "Editor/UnrealEd/Classes/Editor/EditorEngine.h"
 #endif
@@ -107,7 +108,7 @@ void FThreeGlassesHMD::EnableHMD(bool enable)
 
 EHMDDeviceType::Type FThreeGlassesHMD::GetHMDDeviceType() const
 {
-	return EHMDDeviceType::DT_OculusRift;
+	return EHMDDeviceType::DT_ES2GenericStereoMesh;
 }
 
 bool FThreeGlassesHMD::GetHMDMonitorInfo(MonitorInfo& MonitorDesc)
@@ -316,158 +317,13 @@ void FThreeGlassesHMD::ApplySystemOverridesOnStereo(bool force)
 	// TODO: update flags/settings here triggered by exec
 }
 
-FVector GetPos(float i, float j, uint32_t GirdNum)
-{
-	auto unitUV = 1.0f / GirdNum;
-	return FVector(i*unitUV * 2 - 1, 1.0f - j*unitUV * 2, 0.5f);
-}
-
-void GetMash(TArray<FVector>& vertices, TArray<uint16>& indices, uint32_t GirdNum)
-{
-	for (uint32_t j = 0; j < GirdNum + 1; j++)
-	{
-		for (uint32_t i = 0; i < GirdNum + 1; i++)
-		{
-			vertices.Add(GetPos(static_cast<float>(i), static_cast<float>(j), GirdNum));
-		}
-	}
-	auto mid = GirdNum / 2;
-	for (uint32_t j = 0; j < GirdNum; j++)
-	{
-		for (uint32_t i = 0; i < GirdNum; i++)
-		{
-			if ((i < mid&&j < mid) || (i >= mid&&j >= mid))
-			{
-				indices.Add(i + j*(GirdNum + 1));
-				indices.Add(i + 1 + j*(GirdNum + 1));
-				indices.Add(i + (j + 1)*(GirdNum + 1));
-				indices.Add(i + (j + 1)*(GirdNum + 1));
-				indices.Add(i + 1 + j*(GirdNum + 1));
-				indices.Add(i + 1 + (j + 1)*(GirdNum + 1));
-			}
-			else
-			{
-				indices.Add(i + j*(GirdNum + 1));
-				indices.Add(i + 1 + j*(GirdNum + 1));
-				indices.Add(i + 1 + (j + 1)*(GirdNum + 1));
-				indices.Add(i + j*(GirdNum + 1));
-				indices.Add(i + 1 + (j + 1)*(GirdNum + 1));
-				indices.Add(i + (j + 1)*(GirdNum + 1));
-			}
-		}
-	}
-}
-
 void FThreeGlassesHMD::UpdateStereoRenderingParams()
 {
-	if (IsInitialized())
-	{
-		TArray<FVector> vertices;
-		TArray<uint16> Indices;
-		int GirdNum = 64;
-		GetMash(vertices, Indices, GirdNum);
-
-		for (int eyeIndex = szvrEye_Left; eyeIndex < szvrEye_Count; ++eyeIndex)
-		{
-			//SZVR_CopyDistortionMesh(DistorMesh[eyeIndex].pVertices, DistorMesh[eyeIndex].pIndices, &DummyDistScale, eyeIndex == szvrEye_Right);
-			int VertNum = vertices.Num();
-			int IndexNum = Indices.Num();
-			DistorMesh[eyeIndex].NumVertices = VertNum;
-			DistorMesh[eyeIndex].NumIndices = IndexNum;
-			DistorMesh[eyeIndex].NumTriangles = IndexNum / 3;
-			DistorMesh[eyeIndex].pVerticesCached = new FDistortionVertex[VertNum];
-			DistorMesh[eyeIndex].pIndices = new int[IndexNum];
-			for (int i = 0; i < VertNum; ++i)
-			{
-				DistorMesh[eyeIndex].pVerticesCached[i].Position.X = vertices[i].X*0.5f - 0.5f + eyeIndex;
-				DistorMesh[eyeIndex].pVerticesCached[i].Position.Y = vertices[i].Y;
-
-				DistorMesh[eyeIndex].pVerticesCached[i].VignetteFactor = 1.0f;
-				DistorMesh[eyeIndex].pVerticesCached[i].TimewarpFactor = 0;
-				FVector2D uv = { (vertices[i].X / 2.0f) + 0.5f, 0.5f - vertices[i].Y / 2.0f };
-
-				SZVR_GetDistortion(HMDResX, &uv.X, &DistorMesh[eyeIndex].pVerticesCached[i].TexR.X, &DistorMesh[eyeIndex].pVerticesCached[i].TexG.X, &DistorMesh[eyeIndex].pVerticesCached[i].TexB.X);
-				DistorMesh[eyeIndex].pVerticesCached[i].TexR.X = DistorMesh[eyeIndex].pVerticesCached[i].TexR.X*0.5f + 0.5f*eyeIndex;
-				DistorMesh[eyeIndex].pVerticesCached[i].TexG.X = DistorMesh[eyeIndex].pVerticesCached[i].TexG.X*0.5f + 0.5f*eyeIndex;
-				DistorMesh[eyeIndex].pVerticesCached[i].TexB.X = DistorMesh[eyeIndex].pVerticesCached[i].TexB.X*0.5f + 0.5f*eyeIndex;
-			}
-
-			for (int i = 0; i < IndexNum; i++)
-			{
-				DistorMesh[eyeIndex].pIndices[i] = Indices[i];
-			}
-		}
-
-		Flags.bNeedUpdateStereoRenderingParams = false;
-	}
-}
-
-void FThreeGlassesHMD::CopyToMirrorTexture(FRHICommandListImmediate &RHICmdList, const FTextureRHIRef& SrcTexture)
-{
-	const auto featureLevel = GMaxRHIFeatureLevel;
-	auto shaderMap = GetGlobalShaderMap(featureLevel);
-
-	TShaderMapRef<FScreenVS> vertexShader(shaderMap);
-	TShaderMapRef<FScreenPS> pixelShader(shaderMap);
-
-	static FGlobalBoundShaderState boundShaderState;
-	SetGlobalBoundShaderState(RHICmdList, featureLevel, boundShaderState, RendererModule->GetFilterVertexDeclaration().VertexDeclarationRHI, *vertexShader, *pixelShader);
-
-	pixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Bilinear>::GetRHI(), SrcTexture);
-	int32 srcSizeX = SrcTexture->GetTexture2D()->GetSizeX();
-	int32 srcSizeY = SrcTexture->GetTexture2D()->GetSizeY();
-	SetRenderTarget(RHICmdList, MirrorTexture, FTextureRHIRef());
-
-	int32 TargetSizeX = MirrorTexture->GetSizeX();
-	int32 TargetSizeY = MirrorTexture->GetSizeY();
-	RHICmdList.SetViewport(0, 0, 0, TargetSizeX, TargetSizeY, 1.0f);
-	RendererModule->DrawRectangle(
-		RHICmdList,
-		0, 0, // X, Y
-		TargetSizeX, TargetSizeY, // SizeX, SizeY
-		0.0f, 0.0f, // U, V
-		srcSizeX*0.5, srcSizeY, // SizeU, SizeV
-		FIntPoint(TargetSizeX, TargetSizeY), // TargetSize
-		FIntPoint(srcSizeX, srcSizeY), // TextureSize
-		*vertexShader,
-		EDRF_Default);
 }
 
 void FThreeGlassesHMD::DrawDistortionMesh_RenderThread(struct FRenderingCompositePassContext& Context, const FIntPoint& TextureSize)
 {
 	check(IsInRenderingThread());
-
-	const FSceneView& View = Context.View;
-
-	FRHICommandListImmediate& RHICmdList = Context.RHICmdList;
-	const FSceneViewFamily& ViewFamily = *(View.Family);
-	int ViewportSizeX = ViewFamily.RenderTarget->GetRenderTargetTexture()->GetSizeX();
-	int ViewportSizeY = ViewFamily.RenderTarget->GetRenderTargetTexture()->GetSizeY();
-
-	RHICmdList.SetViewport(0, 0, 0.0f, ViewportSizeX, ViewportSizeY, 1.0f);
-
-	const FDistortionMesh& distMesh = DistorMesh[(View.StereoPass == eSSP_LEFT_EYE) ? szvrEye_Left : szvrEye_Right];
-
-	if ((!Flags.bNotRenderLeft && View.StereoPass == eSSP_LEFT_EYE) || (!Flags.bNotRenderRight && View.StereoPass == eSSP_RIGHT_EYE))
-	{
-		DrawIndexedPrimitiveUP(Context.RHICmdList, PT_TriangleList, 0, distMesh.NumVertices, distMesh.NumTriangles, distMesh.pIndices,
-			sizeof(int), distMesh.pVerticesCached, sizeof(FDistortionVertex));
-	}
-
-	if (View.StereoPass == eSSP_LEFT_EYE)
-	{
-		FRenderingCompositeOutputRef*  OutputRef = Context.Pass->GetInput(ePId_Input0);
-		FRenderingCompositePass* Source = *(FRenderingCompositePass**)(OutputRef);
-		FRenderingCompositeOutput* Input = Source->GetOutput(OutputRef->GetOutputId());
-		//FRenderingCompositeOutput* Input = OutputRef->GetOutput();
-
-		TRefCountPtr<IPooledRenderTarget> InputPooledElement = Input->RequestInput();
-
-		check(!InputPooledElement->IsFree());
-		const FTextureRHIRef& SrcTexture = InputPooledElement->GetRenderTargetItem().ShaderResourceTexture;
-
-		CopyToMirrorTexture(RHICmdList, SrcTexture);
-	}
 }
 
 #if !UE_BUILD_SHIPPING
@@ -485,36 +341,6 @@ static void RenderLines(FCanvas* Canvas, int numLines, const FColor& c, float* x
 void FThreeGlassesHMD::DrawDebug(UCanvas* Canvas)
 {
 #if !UE_BUILD_SHIPPING
-	check(IsInGameThread());
-	if (!Flags.bDrawGrid) return;
-	const FColor cLeft(0, 128, 255);
-	const FColor cRight(0, 255, 0);
-	for (int eyeIndex = szvrEye_Left; eyeIndex < szvrEye_Count; ++eyeIndex)
-	{
-		if (Flags.bNotRenderLeft && eyeIndex == szvrEye_Left || Flags.bNotRenderRight && eyeIndex == szvrEye_Right)
-			continue;
-
-		float x[2], y[2];
-		for (int i = 0; i < DistorMesh[eyeIndex].NumTriangles; i++)
-		{
-			x[0] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3]].Position.X;
-			x[1] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 1]].Position.X;
-			y[0] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3]].Position.Y;
-			y[1] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 1]].Position.Y;
-			RenderLines(Canvas->Canvas, 1, eyeIndex == szvrEye_Left ? cLeft : cRight, x, y);
-			x[0] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 1]].Position.X;
-			x[1] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 2]].Position.X;
-			y[0] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 1]].Position.Y;
-			y[1] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 2]].Position.Y;
-			RenderLines(Canvas->Canvas, 1, eyeIndex == szvrEye_Left ? cLeft : cRight, x, y);
-			x[0] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 2]].Position.X;
-			x[1] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3]].Position.X;
-			y[0] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3 + 2]].Position.Y;
-			y[1] = DistorMesh[eyeIndex].pVerticesCached[DistorMesh[eyeIndex].pIndices[i * 3]].Position.Y;
-			RenderLines(Canvas->Canvas, 1, eyeIndex == szvrEye_Left ? cLeft : cRight, x, y);
-		}
-	}
-
 #endif //!UE_BUILD_SHIPPING
 }
 
@@ -663,7 +489,7 @@ void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
 {
 }
 
-void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const
+void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* srcTexture, class FRHITexture2D* backBuffer) const
 {
 	const int viewportWidth = backBuffer->GetSizeY();
 	const int viewportHeight = backBuffer->GetSizeY();
@@ -690,13 +516,13 @@ void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& 
 	static FGlobalBoundShaderState boundShaderState;
 	SetGlobalBoundShaderState(rhiCmdList, featureLevel, boundShaderState, RendererModule->GetFilterVertexDeclaration().VertexDeclarationRHI, *vertexShader, *pixelShader);
 
-	pixelShader->SetParameters(rhiCmdList, TStaticSamplerState<SF_Bilinear>::GetRHI(), MirrorTexture);
+	pixelShader->SetParameters(rhiCmdList, TStaticSamplerState<SF_Bilinear>::GetRHI(), srcTexture);
 	RendererModule->DrawRectangle(
 		rhiCmdList,
 		0, 0, // X, Y
 		viewportWidth, viewportHeight, // SizeX, SizeY
 		0.0f, 0.0f, // U, V
-		1, 1, // SizeU, SizeV
+		0.5f, 1, // SizeU, SizeV
 		FIntPoint(viewportWidth, viewportHeight), // TargetSize
 		FIntPoint(1, 1), // TextureSize
 		*vertexShader,
@@ -708,8 +534,7 @@ void FThreeGlassesHMD::RenderTexture_RenderThread(class FRHICommandListImmediate
 {
 	check(IsInRenderingThread());
 
-	RenderMirrorToBackBuffer(rhiCmdList, backBuffer);
-	MonitorPresent((ID3D11Texture2D*)srcTexture->GetNativeResource());
+	RenderMirrorToBackBuffer(rhiCmdList, srcTexture, backBuffer);
 }
 
 #if PLATFORM_WINDOWS
@@ -749,12 +574,13 @@ void FThreeGlassesHMD::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InV
 
 void FThreeGlassesHMD::OnBeginPlay(FWorldContext& InWorldContext)
 {
-	FApp::SetHasVRFocus(true);
+	mCurrentPresent = new D3D11Present();
 }
 
 void FThreeGlassesHMD::OnEndPlay(FWorldContext& InWorldContext)
 {
-	FApp::SetHasVRFocus(false);
+	EnableStereo(false);
+	mCurrentPresent = nullptr;
 }
 
 void FThreeGlassesHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& View)
@@ -778,6 +604,7 @@ void FThreeGlassesHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHIC
 	}
 
 	View.UpdateViewMatrix();
+	SDKCoreStereoRenderBegin();
 }
 
 void FThreeGlassesHMD::PreRenderViewFamily_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& ViewFamily)
@@ -801,7 +628,7 @@ void FThreeGlassesHMD::Startup()
 	static const FName RendererModuleName("Renderer");
 	RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
 
-	UpdateStereoRenderingParams();
+	//UpdateStereoRenderingParams();
 
 	// grab a pointer to the renderer module for displaying our mirror window
 	GEngine->bSmoothFrameRate = false;
@@ -809,34 +636,12 @@ void FThreeGlassesHMD::Startup()
 	CVSyncVar->Set(true);
 
 	SetVsync(bVsyncOn, 120.f);
+	SDKCoreInit(hInstance);
 }
 
 void FThreeGlassesHMD::Shutdown()
 {
-	if(MonitorWindow)
-		DestroyWindow(MonitorWindow);
-
-	UnregisterClass(TEXT("HMD"), GetModuleHandle(NULL));
-	if (SwapChain)
-	{
-		SwapChain->SetFullscreenState(false, nullptr);
-		SwapChain->Release();
-		SwapChain = NULL;
-	}
-
-	if (D3DContext)
-	{
-		D3DContext->ClearState();
-		D3DContext->Release();
-		D3DContext = NULL;
-	}
-
-	if (Device)
-	{
-		Device->Release();
-		Device = NULL;
-	}
-
+	SDKCoreDestroy();
 	if (FinishTracking)
 		FinishTracking();
 	if (ReleaseDevices)
@@ -862,7 +667,7 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	GazePlane = 340.0f;
 
 	// load server dll
-	if (LoadTrackDll())
+	if (LoadTrackDll()) 
 	{
 		InitDevices();
 		StartTracking(NULL, NULL);
@@ -876,7 +681,6 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 		HMDResX = rect.right - rect.left;
 		HMDResY = rect.bottom - rect.top;
 		AspectRatio = (float)HMDResX / (float)HMDResY;
-		InitWindow(GetModuleHandle(NULL));
 	}
 	else
 	{
@@ -913,87 +717,6 @@ void FThreeGlassesHMD::CalculateRenderTargetSize(const class FViewport& Viewport
 	InOutSizeY = HMDResY;
 }
 
-bool FThreeGlassesHMD::AllocateMirrorTexture()
-{
-	auto d3d11RHI = static_cast<FD3D11DynamicRHI*>(GDynamicRHI);
-	auto graphicsDevice = reinterpret_cast<ID3D11Device*>(RHIGetNativeDevice());
-	ID3D11DeviceContext* context = NULL;
-	graphicsDevice->GetImmediateContext(&context);
-
-	HRESULT hr;
-
-	D3D11_TEXTURE2D_DESC textureDesc;
-	memset(&textureDesc, 0, sizeof(textureDesc));
-	textureDesc.Width = 800;
-	textureDesc.Height = 800;
-	textureDesc.MipLevels = 1;
-	textureDesc.ArraySize = 1;
-	textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	textureDesc.SampleDesc.Count = 1;
-	textureDesc.SampleDesc.Quality = 0;
-	textureDesc.Usage = D3D11_USAGE_DEFAULT;
-	// We need it to be both a render target and a shader resource
-	textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-	textureDesc.CPUAccessFlags = 0;
-	textureDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
-
-	ID3D11Texture2D *D3DTexture = nullptr;
-	hr = graphicsDevice->CreateTexture2D(
-		&textureDesc, NULL, &D3DTexture);
-	check(!FAILED(hr));
-
-	D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
-	memset(&renderTargetViewDesc, 0, sizeof(renderTargetViewDesc));
-	// This must match what was created in the texture to be rendered
-	//renderTargetViewDesc.Format = renderTextureDesc.Format;
-	renderTargetViewDesc.Format = textureDesc.Format;
-	renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-	renderTargetViewDesc.Texture2D.MipSlice = 0;
-
-	// Create the render target view.
-	ID3D11RenderTargetView *renderTargetView; //< Pointer to our render target view
-	hr = graphicsDevice->CreateRenderTargetView(
-		D3DTexture, &renderTargetViewDesc, &renderTargetView);
-	check(!FAILED(hr));
-
-	ID3D11ShaderResourceView* shaderResourceView = nullptr;
-	bool bCreatedRTVsPerSlice = false;
-	int32 rtvArraySize = 1;
-	TArray<TRefCountPtr<ID3D11RenderTargetView>> renderTargetViews;
-	TRefCountPtr<ID3D11DepthStencilView>* depthStencilViews = nullptr;
-	uint32 sizeZ = 0;
-	EPixelFormat epFormat = PF_R8G8B8A8;
-	bool bCubemap = false;
-	bool bPooled = false;
-	// override flags
-	uint32 flags = TexCreate_RenderTargetable | TexCreate_ShaderResource;
-
-	renderTargetViews.Add(renderTargetView);
-	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
-	memset(&shaderResourceViewDesc, 0, sizeof(shaderResourceViewDesc));
-	shaderResourceViewDesc.Format = textureDesc.Format;
-	shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-	shaderResourceViewDesc.Texture2D.MipLevels = textureDesc.MipLevels;
-	shaderResourceViewDesc.Texture2D.MostDetailedMip = textureDesc.MipLevels - 1;
-
-	hr = graphicsDevice->CreateShaderResourceView(
-		D3DTexture, &shaderResourceViewDesc, &shaderResourceView);
-	check(!FAILED(hr));
-
-	auto targetableTexture = new FD3D11Texture2D(
-		d3d11RHI, D3DTexture, shaderResourceView, bCreatedRTVsPerSlice,
-		rtvArraySize, renderTargetViews, depthStencilViews,
-		textureDesc.Width, textureDesc.Height, sizeZ, 1, 1, epFormat,
-		bCubemap, flags, bPooled, FClearValueBinding::Black);
-
-	MirrorTexture = targetableTexture->GetTexture2D();
-
-	float color[4] = { 1,1,1,1 };
-	context->ClearRenderTargetView(renderTargetView, color);
-	context->Flush();
-	return true;
-}
-
 bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	uint32 index,
 	uint32 sizeX, uint32 sizeY,
@@ -1003,31 +726,17 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	FTexture2DRHIRef& outShaderResourceTexture,
 	uint32 numSamples)
 {
-	const DXGI_FORMAT platformResourceFormat = (DXGI_FORMAT)DxgiFormat;
-	const DXGI_FORMAT platformShaderResourceFormat = FindShaderResourceDXGIFormat(platformResourceFormat, false);
-	auto d3d11RHI = static_cast<FD3D11DynamicRHI*>(GDynamicRHI);
 	auto graphicsDevice = reinterpret_cast<ID3D11Device*>(RHIGetNativeDevice());
-	HRESULT hr;
-	D3D11_TEXTURE2D_DESC textureDesc;
-	memset(&textureDesc, 0, sizeof(textureDesc));
-	textureDesc.Width = sizeX;
-	textureDesc.Height = sizeY;
-	textureDesc.MipLevels = numMips;
-	textureDesc.ArraySize = 1;
-	textureDesc.Format = platformResourceFormat;
-	textureDesc.SampleDesc.Count = numSamples;
-	textureDesc.SampleDesc.Quality = numSamples > 0 ? D3D11_STANDARD_MULTISAMPLE_PATTERN : 0;
-	textureDesc.Usage = D3D11_USAGE_DEFAULT;
-	// We need it to be both a render target and a shader resource
-	textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-	textureDesc.CPUAccessFlags = 0;
-	textureDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
-
+	HANDLE handle = SDKCoreStereoRenderGetRenderTarget();
 	ID3D11Texture2D *D3DTexture = nullptr;
-	hr = graphicsDevice->CreateTexture2D(
-		&textureDesc, NULL, &D3DTexture);
-	check(!FAILED(hr));
+	HRESULT hr = graphicsDevice->OpenSharedResource(handle, __uuidof(ID3D11Texture2D),
+		(LPVOID*)&D3DTexture);
 
+	D3D11_TEXTURE2D_DESC Desc;
+	D3DTexture->GetDesc(&Desc);
+	const DXGI_FORMAT platformShaderResourceFormat = FindShaderResourceDXGIFormat(Desc.Format, false);
+	auto d3d11RHI = static_cast<FD3D11DynamicRHI*>(GDynamicRHI);
+	
 	D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
 	memset(&renderTargetViewDesc, 0, sizeof(renderTargetViewDesc));
 	// This must match what was created in the texture to be rendered
@@ -1040,7 +749,6 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	hr = graphicsDevice->CreateRenderTargetView(
 		D3DTexture, &renderTargetViewDesc, &RenderTargetView);
 	check(!FAILED(hr));
-
 
 	ID3D11ShaderResourceView* shaderResourceView = nullptr;
 	bool bCreatedRTVsPerSlice = false;
@@ -1060,8 +768,8 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	//shaderResourceViewDesc.Format = textureDesc.Format;
 	shaderResourceViewDesc.Format = platformShaderResourceFormat;
 	shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-	shaderResourceViewDesc.Texture2D.MipLevels = textureDesc.MipLevels;
-	shaderResourceViewDesc.Texture2D.MostDetailedMip = textureDesc.MipLevels - 1;
+	shaderResourceViewDesc.Texture2D.MipLevels = Desc.MipLevels;
+	shaderResourceViewDesc.Texture2D.MostDetailedMip = Desc.MipLevels - 1;
 
 	hr = graphicsDevice->CreateShaderResourceView(
 		D3DTexture, &shaderResourceViewDesc, &shaderResourceView);
@@ -1070,13 +778,12 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	auto targetableTexture = new FD3D11Texture2D(
 		d3d11RHI, D3DTexture, shaderResourceView, bCreatedRTVsPerSlice,
 		rtvArraySize, renderTargetViews, depthStencilViews,
-		textureDesc.Width, textureDesc.Height, sizeZ, numMips, numSamples, epFormat,
+		Desc.Width, Desc.Height, sizeZ, numMips, numSamples, epFormat,
 		bCubemap, flags, bPooled, FClearValueBinding::Black);
 
 	outTargetableTexture = targetableTexture->GetTexture2D();
 	outShaderResourceTexture = targetableTexture->GetTexture2D();
 
-	AllocateMirrorTexture();
 	return true;
 }
 
@@ -1093,134 +800,23 @@ FString FThreeGlassesHMD::GetVersionString() const
 void FThreeGlassesHMD::UpdateViewport(bool bUseSeparateRenderTarget, const FViewport& InViewport, class SViewport*)
 {
 	check(IsInGameThread());
-}
-
-void FThreeGlassesHMD::MonitorPresent(ID3D11Texture2D* tex2d) const
-{
-	if (!Device)
+	FRHIViewport* const ViewportRHI = InViewport.GetViewportRHI().GetReference();
+	if (!ViewportRHI)
 	{
 		return;
 	}
 
-	HANDLE texHandle = 0;
-
-	IDXGIResource* pResource;
-	tex2d->QueryInterface(__uuidof(IDXGIResource), reinterpret_cast<void**>(&pResource));
-	pResource->GetSharedHandle(&texHandle);
-	pResource->Release();
-	ID3D11Texture2D* SrcTexure = NULL;
-	HRESULT hr = Device->OpenSharedResource(texHandle, __uuidof(ID3D11Texture2D),
-		(LPVOID*)&SrcTexure);
-
-	ID3D11Texture2D* pBackBuffer = NULL;
-	hr = SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
-
-	D3DContext->CopyResource(pBackBuffer, SrcTexure);
-	D3DContext->Flush();
-	SwapChain->Present(1, 0);
-	SrcTexure->Release();
-	pBackBuffer->Release();
-}
-
-LRESULT CALLBACK WndProc(HWND hWnd, uint32 message, WPARAM wParam, LPARAM lParam)
-{
-	PAINTSTRUCT ps;
-	HDC hdc;
-
-	switch (message)
+	if (!IsStereoEnabled())
 	{
-	case WM_PAINT:
-		hdc = BeginPaint(hWnd, &ps);
-		EndPaint(hWnd, &ps);
-		break;
-
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		break;
-
-	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
+		if (!bUseSeparateRenderTarget)
+		{
+			ViewportRHI->SetCustomPresent(nullptr);
+		}
 	}
-
-	return 0;
-}
-
-void FThreeGlassesHMD::InitWindow(HINSTANCE hInst)
-{
-	int Width = HMDResX;
-	int Height = HMDResY;
-
-	int X = HMDDesktopX, Y = HMDDesktopY;
-
-	HINSTANCE HInstance = hInst;
-
-	WNDCLASSEX WndClassEx;
-	ZeroMemory(&WndClassEx, sizeof(WndClassEx));
-	WndClassEx.cbSize = sizeof(WndClassEx);
-	WndClassEx.style = CS_NOCLOSE;
-	WndClassEx.lpfnWndProc = &WndProc;
-	WndClassEx.hIcon = 0;
-	WndClassEx.hCursor = LoadCursor(NULL, IDC_ARROW);
-	WndClassEx.hInstance = HInstance;
-	WndClassEx.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
-	WndClassEx.lpszClassName = TEXT("HMD");
-	ATOM WndClassAtom = RegisterClassEx(&WndClassEx);
-
-	unsigned long WindowStyle = WS_VISIBLE | WS_POPUP;
-
-	int winW = Width;
-	int winH = Height;
-
-	RECT WindowRect;
-	ZeroMemory(&WindowRect, sizeof(WindowRect));
-	WindowRect.left = X;
-	WindowRect.top = Y;
-	WindowRect.right = WindowRect.left + winW;
-	WindowRect.bottom = WindowRect.top + winH;
-	AdjustWindowRectEx(&WindowRect, WindowStyle, 0, 0);
-
-	MonitorWindow = CreateWindow(TEXT("HMD"), TEXT("Unreal Engine"),
-		WindowStyle, WindowRect.left, WindowRect.top,
-		WindowRect.right - WindowRect.left, WindowRect.bottom - WindowRect.top,
-		NULL, NULL, HInstance, NULL);
-
-	SetWindowLong(MonitorWindow, GWL_EXSTYLE, GetWindowLong(MonitorWindow, GWL_EXSTYLE) | WS_EX_NOACTIVATE);
-	//ShowWindow(MonitorWindow, SW_HIDE);
-	uint32 createDeviceFlags = 0;
-#ifdef _DEBUG
-	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
-
-	D3D_FEATURE_LEVEL featureLevels[] =
+	else
 	{
-		D3D_FEATURE_LEVEL_11_0,
-	};
-	uint32 numFeatureLevels = ARRAYSIZE(featureLevels);
-
-	DXGI_SWAP_CHAIN_DESC sd;
-	ZeroMemory(&sd, sizeof(sd));
-	sd.BufferCount = 1;
-	sd.BufferDesc.Width = Width;
-	sd.BufferDesc.Height = Height;
-	sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	sd.BufferDesc.RefreshRate.Numerator = 0;
-	sd.BufferDesc.RefreshRate.Denominator = 1;
-	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	sd.OutputWindow = MonitorWindow;
-	sd.SampleDesc.Count = 1;
-	sd.SampleDesc.Quality = 0;
-	sd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
-	sd.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
-	sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-	sd.Flags = 0;
-	sd.Windowed = true;
-
-	D3D_FEATURE_LEVEL       g_featureLevel = D3D_FEATURE_LEVEL_11_0;
-
-	HRESULT hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, createDeviceFlags, featureLevels, numFeatureLevels,
-		D3D11_SDK_VERSION, &sd, &SwapChain, &Device, &g_featureLevel, &D3DContext);
-
-	SwapChain->SetFullscreenState(true, NULL);
+		ViewportRHI->SetCustomPresent(mCurrentPresent);
+	}
 }
 
 void FThreeGlassesHMD::SetMotionPredictionFactor(bool bPredictionOn, bool bOpenVsync, float scale, int maxFps)
@@ -1231,6 +827,21 @@ void FThreeGlassesHMD::SetMotionPredictionFactor(bool bPredictionOn, bool bOpenV
 	bIsMotionPredictionOn = bPredictionOn;
 	MotionPredictionFactor = scale;
 	SetVsync(bOpenVsync, maxFps);
+}
+
+bool FThreeGlassesHMD::D3D11Present::Present(int32& InOutSyncInterval)
+{
+	return true;
+}
+
+FThreeGlassesHMD::D3D11Present::~D3D11Present()
+{
+	Sleep(1);
+}
+
+void  FThreeGlassesHMD::D3D11Present::PostPresent()
+{
+	SDKCoreStereoRenderEnd();
 }
 
 void FThreeGlassesHMD::SetVsync(bool bOpenVsync, float maxFps)

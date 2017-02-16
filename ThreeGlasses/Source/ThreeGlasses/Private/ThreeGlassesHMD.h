@@ -128,22 +128,13 @@ public:
 	}
 
 public:
-	FTexture2DRHIRef			            MirrorTexture = NULL;
 	int32									HMDDesktopX = 0;
 	int32									HMDDesktopY = 0;
 	int32									HMDResX = 2880;
 	int32									HMDResY = 1440;
-	IDXGISwapChain*							SwapChain = NULL;
-	ID3D11Device*							Device = NULL;
-	ID3D11DeviceContext*					D3DContext = NULL;
-	HWND									MonitorWindow = NULL;
-	int										DxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	bool AllocateMirrorTexture();
-	void CopyToMirrorTexture(FRHICommandListImmediate &RHICmdList, const FTextureRHIRef& SrcTexture);
-	void RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* backBuffer) const;
-	void InitWindow(HINSTANCE hInst);
-	void MonitorPresent(struct ID3D11Texture2D* tex2d) const;
+	void RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* srcTexture, class FRHITexture2D* backBuffer) const;
+
 	IRendererModule*						RendererModule = NULL;
 
 	bool AllocateRenderTargetTexture(
@@ -159,6 +150,22 @@ private:
 	void Startup();
 	void Shutdown();
 
+	class D3D11Present : public FRHICustomPresent
+	{
+	public:
+		D3D11Present() :
+			FRHICustomPresent(nullptr)
+		{}
+
+		virtual ~D3D11Present();// should release any references to D3D resources.
+		virtual void OnBackBufferResize() {};
+		virtual bool Present(int32& InOutSyncInterval);
+		virtual void PostPresent();
+		virtual void Reset() {};
+		virtual void Shutdown() {};
+	};
+
+	D3D11Present* mCurrentPresent = NULL;
 private:
 
 	typedef enum
@@ -281,7 +288,6 @@ private:
 
 	double					LastSensorTime;
 	HANDLE					hThread = 0;
-	FDistortionMesh DistorMesh[2];
 
 	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition);
 	void SetVsync(bool bOpenVsync, float maxFps);

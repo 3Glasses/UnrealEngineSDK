@@ -11,7 +11,7 @@ UThreeGlassBPFunctionLibrary::UThreeGlassBPFunctionLibrary(const FObjectInitiali
 #if THREE_GLASSES_SUPPORTED_PLATFORMS
 FThreeGlassesHMD* GetThreeGlassesHMD()
 {
-    if (GEngine->HMDDevice.IsValid() && (GEngine->HMDDevice->GetHMDDeviceType() == EHMDDeviceType::DT_OculusRift))
+    if (GEngine->HMDDevice.IsValid() && (GEngine->HMDDevice->GetHMDDeviceType() == EHMDDeviceType::DT_ES2GenericStereoMesh))
     {
         return static_cast<FThreeGlassesHMD*>(GEngine->HMDDevice.Get());
     }
