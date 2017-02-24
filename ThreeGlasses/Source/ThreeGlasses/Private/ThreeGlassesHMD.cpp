@@ -11,7 +11,7 @@
 #include "DrawDebugHelpers.h"
 #include "Runtime/Windows/D3D11RHI/Private/D3D11RHIPrivate.h"
 #include "Runtime/Core/Public/Windows/WindowsWindow.h"
-#include "SDKCore.h"
+#include "SDKCompositor.h"
 #if WITH_EDITOR
 #include "Editor/UnrealEd/Classes/Editor/EditorEngine.h"
 #endif
@@ -37,48 +37,28 @@ class FThreeGlassesPlugin : public IThreeGlassesPlugin
 public:
 
 };
-IMPLEMENT_MODULE(FThreeGlassesPlugin, ThreeGlasses)
 
-typedef int(*DevicesFunc)();
-typedef int(*StartTrackingFunc)(void* hmdCallBack, void* wandCallBack);
-DevicesFunc InitDevices = NULL;
-DevicesFunc FinishTracking = NULL;
-DevicesFunc ReleaseDevices = NULL;
-StartTrackingFunc StartTracking = NULL;
+IMPLEMENT_MODULE(FThreeGlassesPlugin, ThreeGlasses)
 
 static bool LoadTrackDll()
 {
-	FString DllPath;
+	FString TrackerParh;
 	FString PluginPath = FPaths::GamePluginsDir();
 	TArray<FString> FileNames;
 	IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
-	if (FileNames.Num() == 0)
-	{
-		PluginPath = FPaths::EnginePluginsDir();
-		IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
-	}
 
 	check(FileNames.Num() > 0);
-	DllPath = FileNames[0];
+	TrackerParh = FileNames[0];
 
-	DllPath.Append(TEXT("\\Source\\ThreeGlasses\\lib\\x64\\3GlassesTracker.dll"));
-	HMODULE hModule = LoadLibrary(*DllPath);
+	TrackerParh.Append(TEXT("\\Source\\ThreeGlasses\\3GlassesTracker.dll"));
+	
+	HMODULE hModule = LoadLibrary(*TrackerParh);
 	if (!hModule)
 	{
 		return false;
 	}
 
-	InitDevices = (DevicesFunc)GetProcAddress(hModule, "InitDevices");
-	StartTracking = (StartTrackingFunc)GetProcAddress(hModule, "StartTracking");
-	FinishTracking = (DevicesFunc)GetProcAddress(hModule, "FinishTracking");
-	ReleaseDevices = (DevicesFunc)GetProcAddress(hModule, "ReleaseDevices");
-
-	if (InitDevices&&StartTracking&&FinishTracking&&ReleaseDevices)
-	{
-		return true;
-	}
-
-	return false;
+	return true;
 }
 
 TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > FThreeGlassesPlugin::CreateHeadMountedDisplay()
@@ -159,7 +139,7 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 	{
 		float data[4] = { 0,0,0,0 };
 		FQuat quat = { 0,0,0,1 };
-		if (SZVR_GetHMDRotate(data))
+		if (SZVR_GetHMDRotate(data) == 0)
 		{
 			quat.Y = -data[0];
 			quat.Z = -data[1];
@@ -173,7 +153,7 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 		}
 
 		FVector loc(0, 0, 0);
-		if (SZVR_GetHMDPos(&loc.X))
+		if (SZVR_GetHMDPos(&loc.X) == 0)
 		{
 			LastPosition = FVector(-loc.Z, loc.X, loc.Y)/7.f;
 			LastPosition = ClampVector(LastPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
@@ -441,6 +421,26 @@ void FThreeGlassesHMD::CalculateStereoViewOffset(const enum EStereoscopicPass St
 
 FMatrix FThreeGlassesHMD::GetStereoProjectionMatrix(const enum EStereoscopicPass StereoPassType, const float FOV) const
 {
+	float Right = FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
+	float Left = -FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
+	float Bottom = -FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
+	float Top = FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
+
+	float ZNear = GNearClippingPlane;
+
+	float SumRL = (Right + Left);
+	float SumTB = (Top + Bottom);
+	float InvRL = (1.0f / (Right - Left));
+	float InvTB = (1.0f / (Top - Bottom));
+
+	return FMatrix(
+		FPlane((2.0f * InvRL), 0.0f, 0.0f, 0.0f),
+		FPlane(0.0f, (2.0f * InvTB), 0.0f, 0.0f),
+		FPlane((SumRL * InvRL), (SumTB * InvTB), 0.0f, 1.0f),
+		FPlane(0.0f, 0.0f, ZNear, 0.0f)
+	);
+
+
 	//const float ProjectionCenterOffset = 0.1f;
 	//const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
 
@@ -451,38 +451,38 @@ FMatrix FThreeGlassesHMD::GetStereoProjectionMatrix(const enum EStereoscopicPass
 	//	FPlane(0.0f, 0.0f, GNearClippingPlane, 0.0f))
 	//	* FTranslationMatrix(FVector(PassProjectionOffset, 0, 0));
 
-	float ZNear = GNearClippingPlane;
-	float wd = ZNear * FMath::Abs(FMath::Tan(HFOV * PI / 180.0f * 0.5f) * 2.0f);
-	float r = wd;
-	float l = -wd;
-	float t = wd / (AspectRatio * 0.5f);
-	float b = -wd / (AspectRatio * 0.5f);
+	//float ZNear = GNearClippingPlane;
+	//float wd = ZNear * FMath::Abs(FMath::Tan(HFOV * PI / 180.0f * 0.5f) * 2.0f);
+	//float r = wd;
+	//float l = -wd;
+	//float t = wd / (AspectRatio * 0.5f);
+	//float b = -wd / (AspectRatio * 0.5f);
 
-	float offest = GetInterpupillaryDistance() * WorldToMetersScale * 0.5f / GazePlane;
-	if (StereoPassType == eSSP_RIGHT_EYE)//eSSP_LEFT_EYE eSSP_RIGHT_EYE
-	{
-		r = r - offest;
-		l = l - offest;
-	}
-	else
-	{
-		r = r + offest;
-		l = l + offest;
-	}
+	//float offest = GetInterpupillaryDistance() * WorldToMetersScale * 0.5f / GazePlane;
+	//if (StereoPassType == eSSP_RIGHT_EYE)//eSSP_LEFT_EYE eSSP_RIGHT_EYE
+	//{
+	//	r = r - offest;
+	//	l = l - offest;
+	//}
+	//else
+	//{
+	//	r = r + offest;
+	//	l = l + offest;
+	//}
 
-	float SumRL = (r + l);
-	float SumTB = (t + b);
-	float InvRL = (1.0f / (r - l));
-	float InvTB = (1.0f / (t - b));
+	//float SumRL = (r + l);
+	//float SumTB = (t + b);
+	//float InvRL = (1.0f / (r - l));
+	//float InvTB = (1.0f / (t - b));
 
-	FMatrix Mat = FMatrix(
-		FPlane((2.0f * ZNear * InvRL), 0.0f, 0.0f, 0.0f),
-		FPlane(0.0f, (2.0f * ZNear * InvTB), 0.0f, 0.0f),
-		FPlane((SumRL * InvRL), (SumTB * InvTB), 0.0f, 1.0f),
-		FPlane(0.0f, 0.0f, ZNear, 0.0f)
-	);
+	//FMatrix Mat = FMatrix(
+	//	FPlane((2.0f * ZNear * InvRL), 0.0f, 0.0f, 0.0f),
+	//	FPlane(0.0f, (2.0f * ZNear * InvTB), 0.0f, 0.0f),
+	//	FPlane((SumRL * InvRL), (SumTB * InvTB), 0.0f, 1.0f),
+	//	FPlane(0.0f, 0.0f, ZNear, 0.0f)
+	//);
 
-	return Mat;
+	//return Mat;
 }
 
 void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
@@ -491,8 +491,19 @@ void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
 
 void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& rhiCmdList, class FRHITexture2D* srcTexture, class FRHITexture2D* backBuffer) const
 {
-	const int viewportWidth = backBuffer->GetSizeY();
-	const int viewportHeight = backBuffer->GetSizeY();
+	bool bSingleStereo = false;
+
+	int viewportWidth = backBuffer->GetSizeX();
+	int viewportHeight = backBuffer->GetSizeY();
+	uint32 offset = 0;
+	float SizeU = 1.0f;
+
+	if (bSingleStereo)
+	{
+		viewportWidth = viewportWidth/2;
+		offset = FMath::Max((int)backBuffer->GetSizeX() - viewportWidth, 0) / 2;
+		SizeU = 0.5f;
+	}
 
 	FRHIRenderTargetView ColorView(backBuffer, 0, -1, ERenderTargetLoadAction::EClear, ERenderTargetStoreAction::EStore);
 	FRHIDepthRenderTargetView DepthView(NULL, ERenderTargetLoadAction::ENoAction, ERenderTargetStoreAction::ENoAction, FExclusiveDepthStencil::DepthNop_StencilNop);
@@ -500,7 +511,6 @@ void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& 
 
 	rhiCmdList.SetRenderTargetsAndClear(Info);
 
-	uint32 offset = FMath::Max((int)backBuffer->GetSizeX() - viewportWidth, 0) / 2;
 	rhiCmdList.SetViewport(offset, 0, 0, viewportWidth + offset, viewportHeight, 1.0f);
 
 	rhiCmdList.SetBlendState(TStaticBlendState<>::GetRHI());
@@ -522,7 +532,7 @@ void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& 
 		0, 0, // X, Y
 		viewportWidth, viewportHeight, // SizeX, SizeY
 		0.0f, 0.0f, // U, V
-		0.5f, 1, // SizeU, SizeV
+		SizeU, 1, // SizeU, SizeV
 		FIntPoint(viewportWidth, viewportHeight), // TargetSize
 		FIntPoint(1, 1), // TextureSize
 		*vertexShader,
@@ -604,7 +614,7 @@ void FThreeGlassesHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHIC
 	}
 
 	View.UpdateViewMatrix();
-	SDKCoreStereoRenderBegin();
+	SDKCompositorStereoRenderBegin();
 }
 
 void FThreeGlassesHMD::PreRenderViewFamily_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneViewFamily& ViewFamily)
@@ -636,16 +646,12 @@ void FThreeGlassesHMD::Startup()
 	CVSyncVar->Set(true);
 
 	SetVsync(bVsyncOn, 120.f);
-	SDKCoreInit(hInstance);
+	SDKCompositorInit(hInstance);
 }
 
 void FThreeGlassesHMD::Shutdown()
 {
-	SDKCoreDestroy();
-	if (FinishTracking)
-		FinishTracking();
-	if (ReleaseDevices)
-		ReleaseDevices();
+	SDKCompositorDestroy();
 }
 
 FThreeGlassesHMD::FThreeGlassesHMD() :
@@ -663,28 +669,44 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	bVsyncOn = true;
 	bIsMotionPredictionOn = true;
 	MotionPredictionFactor = 1.367f;
-	HFOV = 65.0f;
+	HFOV = 45;
 	GazePlane = 340.0f;
 
-	// load server dll
-	if (LoadTrackDll()) 
-	{
-		InitDevices();
-		StartTracking(NULL, NULL);
-	}
+	bool bHMDConnected = false;
+	bool bServerOpen = false;
 
-	RECT rect;
-	if (SZVR_FindHMDRect(rect))
+	// load server process
+	bServerOpen = SZVR_GetHMDConnectionStatus(&bHMDConnected) == 0;
+
+	if(!bServerOpen)
 	{
-		HMDDesktopX = rect.left;
-		HMDDesktopY = rect.top;
-		HMDResX = rect.right - rect.left;
-		HMDResY = rect.bottom - rect.top;
-		AspectRatio = (float)HMDResX / (float)HMDResY;
+		if (LoadTrackDll())
+		{
+			Sleep(1000);
+			bServerOpen = SZVR_GetHMDConnectionStatus(&bHMDConnected) == 0;
+		}
 	}
+	
+	if (bServerOpen&&bHMDConnected)
+	{
+		SDKCompositorHMDRenderInfo(&HMDDesktopX, &HMDDesktopY, &HMDResX, &HMDResY, NULL);
+
+		HMDResX = HMDResX - HMDDesktopX;
+		HMDResY = HMDResY - HMDDesktopY;
+		AspectRatio = (float)HMDResX / (float)HMDResY;
+	}	
 	else
 	{
-		::MessageBox(0, L"HMDDevice is not Connect!!", L"Error", MB_OK);
+		if (!bServerOpen)
+		{
+			::MessageBox(0, L"3Glasses Tracker service is not Open!!", L"Error", MB_OK);
+		}
+		
+		if(!bHMDConnected)
+		{
+			::MessageBox(0, L"HMDDevice is not Connect!!", L"Error", MB_OK);
+		}
+		
 		Flags.bHMDEnabled = false;
 	}
 
@@ -727,7 +749,7 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	uint32 numSamples)
 {
 	auto graphicsDevice = reinterpret_cast<ID3D11Device*>(RHIGetNativeDevice());
-	HANDLE handle = SDKCoreStereoRenderGetRenderTarget();
+	HANDLE handle = SDKCompositorStereoRenderGetRenderTarget();
 	ID3D11Texture2D *D3DTexture = nullptr;
 	HRESULT hr = graphicsDevice->OpenSharedResource(handle, __uuidof(ID3D11Texture2D),
 		(LPVOID*)&D3DTexture);
@@ -841,7 +863,7 @@ FThreeGlassesHMD::D3D11Present::~D3D11Present()
 
 void  FThreeGlassesHMD::D3D11Present::PostPresent()
 {
-	SDKCoreStereoRenderEnd();
+	SDKCompositorStereoRenderEnd();
 }
 
 void FThreeGlassesHMD::SetVsync(bool bOpenVsync, float maxFps)

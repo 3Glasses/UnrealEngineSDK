@@ -49,7 +49,7 @@ public class ThreeGlassesInput : ModuleRules
 			);
 
         PublicLibraryPaths.Add(ModuleDirectory + "/lib/");
-        PublicAdditionalLibraries.Add("SZVR_MEMAPI.lib");
+        PublicAdditionalLibraries.Add("SZVRSharedMemoryAPI.lib");
 
         DynamicallyLoadedModuleNames.AddRange(
 			new string[]

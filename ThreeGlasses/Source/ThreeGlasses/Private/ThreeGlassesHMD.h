@@ -5,7 +5,7 @@
 #include "AllowWindowsPlatformTypes.h"
 #include <d3d11.h>
 #include "ThirdParty/Windows/DirectX/Include/D3DX11tex.h"
-#include "SZVR_MEMAPI.h"
+#include "SZVRSharedMemoryAPI.h"
 #include "HideWindowsPlatformTypes.h"
 #endif
 
@@ -26,6 +26,12 @@ class FThreeGlassesHMD : public IHeadMountedDisplay, public ISceneViewExtension,
 {
 public:
 	/** IHeadMountedDisplay interface */
+	virtual FName GetDeviceName() const
+	{
+		static FName DefaultName(TEXT("ThreeGlassesHMD"));
+		return DefaultName;
+	}
+
 	virtual bool IsHMDConnected() override;
 	virtual bool IsHMDEnabled() const override;
 	virtual void EnableHMD(bool allow = true) override;
@@ -44,9 +50,6 @@ public:
 	virtual void GetCurrentOrientationAndPosition(FQuat& CurrentOrientation, FVector& CurrentPosition) override;
 	virtual TSharedPtr<class ISceneViewExtension, ESPMode::ThreadSafe> GetViewExtension() override;
 	virtual void ApplyHmdRotation(APlayerController* PC, FRotator& ViewRotation) override;
-#if __UESDK_4_10__
-	virtual void UpdatePlayerCameraRotation(class APlayerCameraManager* Camera, struct FMinimalViewInfo& POV) override;
-#endif
 	virtual bool UpdatePlayerCamera(FQuat& CurrentOrientation, FVector& CurrentPosition) override;
 
 	virtual bool IsChromaAbCorrectionEnabled() const override;
@@ -285,9 +288,6 @@ private:
 
 	// HMD base values, specify forward orientation and zero pos offset
 	FQuat BaseOrientation;	// base orientation
-
-	double					LastSensorTime;
-	HANDLE					hThread = 0;
 
 	void GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& CurrentHmdPosition);
 	void SetVsync(bool bOpenVsync, float maxFps);

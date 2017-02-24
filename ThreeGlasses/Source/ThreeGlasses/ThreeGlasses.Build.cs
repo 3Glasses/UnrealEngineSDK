@@ -10,7 +10,8 @@ namespace UnrealBuildTool.Rules
 		{
 			PrivateIncludePaths.AddRange(
 				new string[] {
-					"ThreeGlasses/Private"
+                    "Runtime/Renderer/Private",
+                    "ThreeGlasses/Private"
 				}
 				);
 
@@ -44,6 +45,7 @@ namespace UnrealBuildTool.Rules
                 PublicIncludePaths.AddRange(
                    new string[]
                    {
+                       "Runtime/Renderer/Private",
                        "Runtime/Windows/D3D11RHI/Private",
                        "Runtime/Windows/D3D11RHI/Private/Windows"
                        // ... add other private include paths required here ...
@@ -59,9 +61,9 @@ namespace UnrealBuildTool.Rules
                 else
                 {
                     PublicLibraryPaths.Add(ThreeGlassesLibPath + "x64");
-                    //RuntimeDependencies.Add(new RuntimeDependency(ThreeGlassesLibPath + "x64/3GlassesTracker.dll"));
-                    PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/SDKCore.lib");
-                    PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/SZVR_MEMAPI.lib");
+                    RuntimeDependencies.Add(new RuntimeDependency(ModuleDirectory + "/3GlassesTracker.dll"));
+                    PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/SDKCompositor.lib");
+                    PublicAdditionalLibraries.Add(ThreeGlassesLibPath + "x64/SZVRSharedMemoryAPI.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3dx11.lib");
                     PublicAdditionalLibraries.Add("ThirdParty/Windows/DirectX/Lib/x64/d3d11.lib");
                 }

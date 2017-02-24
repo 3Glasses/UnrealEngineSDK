@@ -6,7 +6,7 @@
 #include "Runtime/InputDevice/Public/IHapticDevice.h"
 #include "IMotionController.h"
 #include "AllowWindowsPlatformTypes.h"
-#include "SZVR_MEMAPI.h"
+#include "SZVRSharedMemoryAPI.h"
 #include "HideWindowsPlatformTypes.h"
 
 #define LOCTEXT_NAMESPACE "FThreeGlassesInputModule"
@@ -49,11 +49,11 @@ public:
 		{
 		case EControllerHand::Left:
 			DeviceOrientation = FQuat(RotData[0], RotData[1], RotData[2], RotData[3]);
-			OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1])/7.f;
+			OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1])*0.1f;
 			break;
 		case EControllerHand::Right:
 			DeviceOrientation = FQuat(RotData[4], RotData[5], RotData[6], RotData[7]);
-			OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4])/7.f;
+			OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4])*0.1f;
 			break;
 		default:
 			return false;
@@ -64,7 +64,7 @@ public:
 			DeviceOrientation = FQuat::Identity;
 		}
 
-		DeviceOrientation = FQuat(-DeviceOrientation.Z, -DeviceOrientation.X, DeviceOrientation.Y, DeviceOrientation.W);// *FQuat(FVector(0, 1, 0), PI)*FQuat(FVector(1, 0, 0), PI);
+		DeviceOrientation = FQuat(-DeviceOrientation.Z, -DeviceOrientation.X, DeviceOrientation.Y, DeviceOrientation.W);
 		OutOrientation = DeviceOrientation.Rotator();
 		return true;
 	}
@@ -123,7 +123,7 @@ public:
 		};
 
 		bool Button[ButtonNum] = { 0 };
-		if (SZVR_GetWandButton(Button))
+		if (SZVR_GetWandButton(Button) == 0)
 		{
 			for (int i = 0; i < ButtonNum; i++)
 			{
@@ -144,7 +144,7 @@ public:
 		}
 
 		uint8 Axis[4] = { 0 };
-		if (SZVR_GetWandStick(Axis))
+		if (SZVR_GetWandStick(Axis) == 0)
 		{
 			FName ThumbstickKeyNames[4] = {
 				FGamepadKeyNames::MotionController_Left_Thumbstick_X,
@@ -165,7 +165,7 @@ public:
 		}
 
 		uint8 TriggerAxis[2];
-		if (SZVR_GetWandTriggerProcess(TriggerAxis))
+		if (SZVR_GetWandTriggerProcess(TriggerAxis) == 0)
 		{
 			if (TriggerState[0] != TriggerAxis[0])
 			{
