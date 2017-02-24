@@ -638,14 +638,6 @@ void FThreeGlassesHMD::Startup()
 	static const FName RendererModuleName("Renderer");
 	RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
 
-	//UpdateStereoRenderingParams();
-
-	// grab a pointer to the renderer module for displaying our mirror window
-	GEngine->bSmoothFrameRate = false;
-	static IConsoleVariable* CVSyncVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync"));
-	CVSyncVar->Set(true);
-
-	SetVsync(bVsyncOn, 120.f);
 	SDKCompositorInit(hInstance);
 }
 
