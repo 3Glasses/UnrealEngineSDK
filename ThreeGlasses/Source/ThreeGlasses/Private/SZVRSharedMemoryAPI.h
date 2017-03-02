@@ -11,10 +11,114 @@ Copyright(c) 2016-2017 ShenZhen Virtual Reality Technology Co., Ltd. All Rights 
 #ifndef __SZVR_SHARED_MEMORY_API__
 #define __SZVR_SHARED_MEMORY_API__
 
+#include <windows.h>
 #include <stdint.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(_WIN64) || defined(WINAPI_FAMILY)
 #define SZVR_EXPORT __declspec(dllexport)
+#endif
+
+#ifdef __cplusplus
+
+namespace SZVR
+{
+	enum eMemoryGuidFlag
+	{
+		eFLAG = 0,
+
+		/* HMD Session */
+		eHMD_CONNECTION,
+		eHMD_PRESENT,
+		eHMD_INFO,
+		eHMD_QUAT,
+		eHMD_POS,
+		eHMD_POS_TRACK,
+		eHMD_TP,
+		eHMD_MENU_BT,
+		eHMD_BACK_BT,
+		eHMD_FIRMWARE_VERSION,
+		eHMD_SERIAL_NUMBER,
+		eHMD_PRODUCT_NAME,
+		eHMD_IPD_VALUE,
+		eHMD_DEVICE_PATH,
+		eHMD_FIRMWARE_VERSION_UPDATE_PROGREES,
+		eHMD_LIGHT_SENSOR_STATUS,
+		eHMD_QUAT_FUSION_RESET,
+		eHMD_POS_RESET,
+
+		/* WAND Session */
+		eWAND_CONNECTION,
+		eWAND_QUAT,
+		eWAND_POS,
+		eWAND_POS_TRACK,
+		eWAND_BTS,
+		eWAND_TRIGGER_VALUE,
+		eWAND_STICK_XY,
+		eWAND_FIRMWARE_VERSION,
+		eWAND_SERIAL_NUMBER,
+		eWAND_PRODUCT_NAME,
+		eWAND_FIRMWARE_VERSION_UPDATE_PROGREES,
+		eWAND_VIBRATOR,
+		eWAND_POWER_LEVEL,
+
+		/* Camera Session */
+		eCAMERA_CONNECTION,
+		eCAMERA_FIRMWARE_VERSION,
+		eCAMERA_SERIAL_NUMBER,
+		eCAMERA_PRODUCT_NAME,
+		eCAMERA_FIRMWARE_VERSION_UPDATE_PROGRESS,
+
+		/* SDK Session */
+		eSDK_3GLASSES_API_BUILDTIME,
+		eSDK_VRSHOW_API_BUILDTIME,
+		eSDK_VRSHOW_SERVER_EXIST,
+
+		/* Max of elements */
+		eMEM_ENUM_MAX
+	};
+
+
+	struct MemoryListData
+	{
+		eMemoryGuidFlag EnumIndex;
+		DWORD SizeOfMemory;
+		TCHAR * StringOfMemoryLabel;
+	};
+
+	class MemoryManager
+	{
+	public:
+		MemoryManager();
+		virtual ~MemoryManager();
+
+		struct ShareMemoryObject
+		{
+			DWORD MemorySize;
+			HANDLE MapHandle;
+			char * MappedData;
+			TCHAR MemoryLabel[MAX_PATH + 1];
+		};
+
+		bool InitIfExist();
+		BOOL ReleaseMemoryManager();
+
+		bool SaveDataMemory(eMemoryGuidFlag eFlag, void * data);
+		bool LoadDataMemory(eMemoryGuidFlag eFlag, void * data);
+	protected:
+		static HANDLE CreateMemorySpace(TCHAR * lable, DWORD len, char ** mappedData);
+		static HANDLE OpenMemorySpace(TCHAR * lable, DWORD len, char ** mappedData);
+		static bool ReadMemory(char* mData, long start, size_t size, void * result);
+		static bool WriteMemory(char* mData, long start, DWORD size, void * data);
+
+	private:
+		ShareMemoryObject MemoryObjList[eMEM_ENUM_MAX];
+	};
+}
+
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /*
@@ -312,6 +416,10 @@ Type: int
 It returns 0 it success, othe value is false
 */
 SZVR_EXPORT uint32_t SZVR_GetWandStick(uint8_t result[]);
+
+#ifdef __cplusplus  
+}
+#endif
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(_WIN64) || defined(WINAPI_FAMILY)
 #undef SZVR_EXPORT

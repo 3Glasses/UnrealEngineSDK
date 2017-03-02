@@ -150,9 +150,6 @@ public:
 		uint32 numSamples);
 
 private:
-	void Startup();
-	void Shutdown();
-
 	class D3D11Present : public FRHICustomPresent
 	{
 	public:

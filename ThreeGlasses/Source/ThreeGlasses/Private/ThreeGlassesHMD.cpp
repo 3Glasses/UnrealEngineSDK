@@ -40,6 +40,7 @@ public:
 
 IMPLEMENT_MODULE(FThreeGlassesPlugin, ThreeGlasses)
 
+static HMODULE hModule = nullptr;
 static bool LoadTrackDll()
 {
 	FString TrackerParh;
@@ -47,12 +48,16 @@ static bool LoadTrackDll()
 	TArray<FString> FileNames;
 	IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
 
-	check(FileNames.Num() > 0);
-	TrackerParh = FileNames[0];
+	if (FileNames.Num()==0)
+	{
+		PluginPath = FPaths::EnginePluginsDir();
+		IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
+	}
 
+	TrackerParh = FileNames[0];
 	TrackerParh.Append(TEXT("\\Source\\ThreeGlasses\\3GlassesTracker.dll"));
 	
-	HMODULE hModule = LoadLibrary(*TrackerParh);
+	hModule = LoadLibrary(*TrackerParh);
 	if (!hModule)
 	{
 		return false;
@@ -104,8 +109,8 @@ bool FThreeGlassesHMD::GetHMDMonitorInfo(MonitorInfo& MonitorDesc)
 
 void FThreeGlassesHMD::GetFieldOfView(float& OutHFOVInDegrees, float& OutVFOVInDegrees) const
 {
-	OutHFOVInDegrees = FMath::RadiansToDegrees(HFOV);
-	OutVFOVInDegrees = FMath::RadiansToDegrees(HFOV);
+	OutHFOVInDegrees = 0.0f;
+	OutVFOVInDegrees = 0.0f;
 }
 
 bool FThreeGlassesHMD::DoesSupportPositionalTracking() const
@@ -421,10 +426,8 @@ void FThreeGlassesHMD::CalculateStereoViewOffset(const enum EStereoscopicPass St
 
 FMatrix FThreeGlassesHMD::GetStereoProjectionMatrix(const enum EStereoscopicPass StereoPassType, const float FOV) const
 {
-	float Right = FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
-	float Left = -FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
-	float Bottom = -FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
-	float Top = FPlatformMath::Tan(FMath::DegreesToRadians(HFOV));
+	float Left, Right, Top, Bottom;
+	SDKCompositorHMDFOVTanAngles(&Left, &Top, &Right, &Bottom);
 
 	float ZNear = GNearClippingPlane;
 
@@ -439,50 +442,6 @@ FMatrix FThreeGlassesHMD::GetStereoProjectionMatrix(const enum EStereoscopicPass
 		FPlane((SumRL * InvRL), (SumTB * InvTB), 0.0f, 1.0f),
 		FPlane(0.0f, 0.0f, ZNear, 0.0f)
 	);
-
-
-	//const float ProjectionCenterOffset = 0.1f;
-	//const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
-
-	//return FMatrix(
-	//	FPlane(FMath::Tan(0.5*PI - HFOVInRadians), 0.0f, 0.0f, 0.0f),
-	//	FPlane(0.0f, FMath::Tan(0.5*PI - HFOVInRadians), 0.0f, 0.0f),
-	//	FPlane(0.0f, 0.0f, 0.0f, 1.0f),
-	//	FPlane(0.0f, 0.0f, GNearClippingPlane, 0.0f))
-	//	* FTranslationMatrix(FVector(PassProjectionOffset, 0, 0));
-
-	//float ZNear = GNearClippingPlane;
-	//float wd = ZNear * FMath::Abs(FMath::Tan(HFOV * PI / 180.0f * 0.5f) * 2.0f);
-	//float r = wd;
-	//float l = -wd;
-	//float t = wd / (AspectRatio * 0.5f);
-	//float b = -wd / (AspectRatio * 0.5f);
-
-	//float offest = GetInterpupillaryDistance() * WorldToMetersScale * 0.5f / GazePlane;
-	//if (StereoPassType == eSSP_RIGHT_EYE)//eSSP_LEFT_EYE eSSP_RIGHT_EYE
-	//{
-	//	r = r - offest;
-	//	l = l - offest;
-	//}
-	//else
-	//{
-	//	r = r + offest;
-	//	l = l + offest;
-	//}
-
-	//float SumRL = (r + l);
-	//float SumTB = (t + b);
-	//float InvRL = (1.0f / (r - l));
-	//float InvTB = (1.0f / (t - b));
-
-	//FMatrix Mat = FMatrix(
-	//	FPlane((2.0f * ZNear * InvRL), 0.0f, 0.0f, 0.0f),
-	//	FPlane(0.0f, (2.0f * ZNear * InvTB), 0.0f, 0.0f),
-	//	FPlane((SumRL * InvRL), (SumTB * InvTB), 0.0f, 1.0f),
-	//	FPlane(0.0f, 0.0f, ZNear, 0.0f)
-	//);
-
-	//return Mat;
 }
 
 void FThreeGlassesHMD::InitCanvasFromView(FSceneView* InView, UCanvas* Canvas)
@@ -584,13 +543,18 @@ void FThreeGlassesHMD::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InV
 
 void FThreeGlassesHMD::OnBeginPlay(FWorldContext& InWorldContext)
 {
-	mCurrentPresent = new D3D11Present();
+	if (!mCurrentPresent)
+	{
+		mCurrentPresent = new D3D11Present();
+		SDKCompositorInit(hInstance);
+	}
 }
 
 void FThreeGlassesHMD::OnEndPlay(FWorldContext& InWorldContext)
 {
 	EnableStereo(false);
 	mCurrentPresent = nullptr;
+	SDKCompositorDestroy();
 }
 
 void FThreeGlassesHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& View)
@@ -633,19 +597,6 @@ void FThreeGlassesHMD::PreRenderViewFamily_RenderThread(FRHICommandListImmediate
 	ApplyLateUpdate(ViewFamily.Scene, OldRelativeTransform, NewRelativeTransform);
 }
 
-void FThreeGlassesHMD::Startup()
-{
-	static const FName RendererModuleName("Renderer");
-	RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
-
-	SDKCompositorInit(hInstance);
-}
-
-void FThreeGlassesHMD::Shutdown()
-{
-	SDKCompositorDestroy();
-}
-
 FThreeGlassesHMD::FThreeGlassesHMD() :
 	BaseOrientation(FQuat::Identity),
 	DeltaControlRotation(FRotator::ZeroRotator),
@@ -681,7 +632,7 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	
 	if (bServerOpen&&bHMDConnected)
 	{
-		SDKCompositorHMDRenderInfo(&HMDDesktopX, &HMDDesktopY, &HMDResX, &HMDResY, NULL);
+		SDKCompositorHMDRenderInfo(&HMDDesktopX, &HMDDesktopY, &HMDResX, &HMDResY);
 
 		HMDResX = HMDResX - HMDDesktopX;
 		HMDResY = HMDResY - HMDDesktopY;
@@ -702,12 +653,13 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 		Flags.bHMDEnabled = false;
 	}
 
-	Startup();
+	static const FName RendererModuleName("Renderer");
+	RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
 }
 
 FThreeGlassesHMD::~FThreeGlassesHMD()
 {
-	Shutdown();
+	FreeLibrary(hModule);
 }
 
 bool FThreeGlassesHMD::IsInitialized() const
