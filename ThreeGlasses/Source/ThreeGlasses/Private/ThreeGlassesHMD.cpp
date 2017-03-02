@@ -41,6 +41,7 @@ public:
 IMPLEMENT_MODULE(FThreeGlassesPlugin, ThreeGlasses)
 
 static HMODULE hModule = nullptr;
+typedef int(*DevicesFunc)();
 static bool LoadTrackDll()
 {
 	FString TrackerParh;
@@ -48,7 +49,7 @@ static bool LoadTrackDll()
 	TArray<FString> FileNames;
 	IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
 
-	if (FileNames.Num()==0)
+	if (FileNames.Num() == 0)
 	{
 		PluginPath = FPaths::EnginePluginsDir();
 		IFileManager::Get().FindFilesRecursive(FileNames, *PluginPath, TEXT("ThreeGlasses"), false, true);
@@ -56,14 +57,19 @@ static bool LoadTrackDll()
 
 	TrackerParh = FileNames[0];
 	TrackerParh.Append(TEXT("\\Source\\ThreeGlasses\\3GlassesTracker.dll"));
-	
+
 	hModule = LoadLibrary(*TrackerParh);
-	if (!hModule)
+	if (hModule)
 	{
-		return false;
+		DevicesFunc InitDevices = (DevicesFunc)GetProcAddress(hModule, "InitDevices");
+		typedef int(*Func)(void*,void*,void*,void*);
+		Func StartTracking = (Func)GetProcAddress(hModule, "StartTracking");
+		InitDevices();
+		StartTracking(nullptr,nullptr,nullptr,nullptr);
+		return true;
 	}
 
-	return true;
+	return false;
 }
 
 TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > FThreeGlassesPlugin::CreateHeadMountedDisplay()
@@ -659,7 +665,15 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 
 FThreeGlassesHMD::~FThreeGlassesHMD()
 {
-	FreeLibrary(hModule);
+	if (hModule)
+	{
+		DevicesFunc ReleaseDevices = (DevicesFunc)GetProcAddress(hModule, "ReleaseDevices");
+		DevicesFunc FinishTracking = (DevicesFunc)GetProcAddress(hModule, "FinishTracking");
+		FinishTracking();
+		ReleaseDevices();
+		FreeLibrary(hModule);
+		hModule = nullptr;
+	}
 }
 
 bool FThreeGlassesHMD::IsInitialized() const
