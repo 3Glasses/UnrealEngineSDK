@@ -24,7 +24,8 @@ extern "C"
 {
 #endif
 
-	SDK_COMPOSITOR_EXPORT bool SDKCompositorInit(HMODULE);
+	SDK_COMPOSITOR_EXPORT bool SDKCompositorInit(HMODULE, bool enableATW);
+	SDK_COMPOSITOR_EXPORT bool SDKCompositorInitGraphicsResource(uint32_t bufferWidth, uint32_t bufferHeight);
 	SDK_COMPOSITOR_EXPORT void SDKCompositorDestroy();
 
 	SDK_COMPOSITOR_EXPORT void SDKCompositorHMDRenderInfo(
@@ -46,10 +47,6 @@ extern "C"
 	SDK_COMPOSITOR_EXPORT void SDKCompositorStereoRenderEnd();
 
 	SDK_COMPOSITOR_EXPORT void SDKCompositorShowDebugMessageBox(std::wstring);
-
-	SDK_COMPOSITOR_EXPORT void SDKCompositorEnableATW();
-	SDK_COMPOSITOR_EXPORT void SDKCompositorDisableATW();
-
 #ifdef __cplusplus
 }
 #endif

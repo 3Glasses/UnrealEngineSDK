@@ -39,25 +39,6 @@ float UThreeGlassBPFunctionLibrary::GetHMDInterpupillaryDistance()
     return IPD;
 }
 
-//For D2, Motion Prediction
-void UThreeGlassBPFunctionLibrary::SetHMDMotionPredictionFactor(bool bMotionPredictionOn, bool bVsyncOn, float PredictionFactor, int MaxFPS)
-{
-    FThreeGlassesHMD* HMD = GetThreeGlassesHMD();
-    if (HMD != nullptr)
-    {
-        HMD->SetMotionPredictionFactor(bMotionPredictionOn, bVsyncOn, PredictionFactor, MaxFPS);
-    }
-}
-
-void UThreeGlassBPFunctionLibrary::SetStereoEffectParam(float HFOV, float GazePlane)
-{
-    FThreeGlassesHMD* HMD = GetThreeGlassesHMD();
-    if (HMD != nullptr)
-    {
-        HMD->SetStereoEffectParam(HFOV, GazePlane);
-    }
-}
-
 void UThreeGlassBPFunctionLibrary::GetHMDOrientationAndPosition(FQuat& CurrentOrientation, FVector& CurrentPosition)
 {
 	FThreeGlassesHMD* HMD = GetThreeGlassesHMD();

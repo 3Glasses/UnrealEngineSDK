@@ -85,7 +85,7 @@ TSharedPtr< class IHeadMountedDisplay, ESPMode::ThreadSafe > FThreeGlassesPlugin
 
 bool FThreeGlassesHMD::IsHMDEnabled() const
 {
-	return Flags.bHMDEnabled;
+	return bHMDEnabled;
 }
 
 void FThreeGlassesHMD::RebaseObjectOrientationAndPosition(FVector& Position, FQuat& Orientation) const
@@ -94,7 +94,7 @@ void FThreeGlassesHMD::RebaseObjectOrientationAndPosition(FVector& Position, FQu
 
 void FThreeGlassesHMD::EnableHMD(bool enable)
 {
-	Flags.bHMDEnabled = enable;
+	bHMDEnabled = enable;
 }
 
 EHMDDeviceType::Type FThreeGlassesHMD::GetHMDDeviceType() const
@@ -156,21 +156,15 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 			quat.Z = -data[1];
 			quat.X = data[2];
 			quat.W = data[3];
-
-			if (quat.IsNormalized())
-			{
-				LastOrientation = quat;
-			}
+			CurrentHmdOrientation = quat;
 		}
 
 		FVector loc(0, 0, 0);
 		if (SZVR_GetHMDPos(&loc.X) == 0)
 		{
-			LastPosition = FVector(-loc.Z, loc.X, loc.Y)/7.f;
-			LastPosition = ClampVector(LastPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
+			CurrentHmdPosition = FVector(-loc.Z, loc.X, loc.Y)/7.f;
+			CurrentHmdPosition = ClampVector(CurrentHmdPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
 		}
-		CurrentHmdPosition = LastPosition;
-		CurrentHmdOrientation = LastOrientation;
 	}
 }
 
@@ -273,8 +267,6 @@ void FThreeGlassesHMD::ResetOrientation(float Yaw)
 		ViewRotation.Yaw -= Yaw;
 		ViewRotation.Normalize();
 	}
-
-	BaseOrientation = ViewRotation.Quaternion();
 }
 
 void FThreeGlassesHMD::ResetPosition()
@@ -337,73 +329,91 @@ void FThreeGlassesHMD::DrawDebug(UCanvas* Canvas)
 
 bool FThreeGlassesHMD::IsStereoEnabled() const
 {
-	return Flags.bStereoEnabled && Flags.bHMDEnabled;
+	return bStereoEnabled && bHMDEnabled;
+}
+
+/** Helper function for acquiring the appropriate FSceneViewport */
+FSceneViewport* FindSceneViewport()
+{
+	if (!GIsEditor)
+	{
+		UGameEngine* GameEngine = Cast<UGameEngine>(GEngine);
+		return GameEngine->SceneViewport.Get();
+	}
+#if WITH_EDITOR
+	else
+	{
+		UEditorEngine* EditorEngine = CastChecked<UEditorEngine>(GEngine);
+		FSceneViewport* PIEViewport = (FSceneViewport*)EditorEngine->GetPIEViewport();
+		if (PIEViewport != nullptr && PIEViewport->IsStereoRenderingAllowed())
+		{
+			// PIE is setup for stereo rendering
+			return PIEViewport;
+		}
+		else
+		{
+			// Check to see if the active editor viewport is drawing in stereo mode
+			// @todo vreditor: Should work with even non-active viewport!
+			FSceneViewport* EditorViewport = (FSceneViewport*)EditorEngine->GetActiveViewport();
+			if (EditorViewport != nullptr && EditorViewport->IsStereoRenderingAllowed())
+			{
+				return EditorViewport;
+			}
+		}
+	}
+#endif
+	return nullptr;
 }
 
 bool FThreeGlassesHMD::EnableStereo(bool stereo)
 {
 	bool NewEnable = (IsHMDEnabled()) ? stereo : false;
-	if (Flags.bStereoEnabled == NewEnable)
-		return Flags.bStereoEnabled;
+	if (bStereoEnabled == NewEnable)
+		return bStereoEnabled;
 
-	Flags.bStereoEnabled = NewEnable;
-	FSceneViewport* sceneViewport;
-	if (!GIsEditor)
+	// Set the viewport to match that of the HMD display
+	FSceneViewport* SceneVP = FindSceneViewport();
+	if (SceneVP)
 	{
-		UGameEngine* gameEngine = Cast<UGameEngine>(GEngine);
-		sceneViewport = gameEngine->SceneViewport.Get();
-	}
-#if WITH_EDITOR
-	else
-	{
-		//UE_LOG(OSVRHMDLog, Warning, TEXT("OSVR getting editor viewport"));
-		UEditorEngine* editorEngine = CastChecked<UEditorEngine>(GEngine);
-		sceneViewport = (FSceneViewport*)editorEngine->GetPIEViewport();
-		if (sceneViewport == nullptr || !sceneViewport->IsStereoRenderingAllowed())
+		TSharedPtr<SWindow> Window = SceneVP->FindWindow();
+		if (Window.IsValid() && SceneVP->GetViewportWidget().IsValid())
 		{
-			sceneViewport = (FSceneViewport*)editorEngine->GetActiveViewport();
-			if (sceneViewport != nullptr && !sceneViewport->IsStereoRenderingAllowed())
+			int32 ResX = 2880;
+			int32 ResY = 1440;
+
+			MonitorInfo MonitorDesc;
+			if (GetHMDMonitorInfo(MonitorDesc))
 			{
-				sceneViewport = nullptr;
+				ResX = MonitorDesc.ResolutionX;
+				ResY = MonitorDesc.ResolutionY;
 			}
-		}
-	}
-#endif
+			FSystemResolution::RequestResolutionChange(ResX, ResY, EWindowMode::WindowedFullscreen);
 
-	if (!sceneViewport)
-	{
-		return false;
-	}
+			if (NewEnable)
+			{
+				/*			uint32 Width, Height;
+							CalculateRenderTargetSize(*SceneVP, Width, Height);*/
+				SceneVP->SetViewportSize(ResX, ResY);
+			}
+			else
+			{
+				FVector2D size = SceneVP->FindWindow()->GetSizeInScreen();
+				SceneVP->SetViewportSize(size.X, size.Y);
+				Window->SetViewportSizeDrivenByWindow(true);
+			}
 
-	if (Flags.bStereoEnabled)
-	{
-		auto window = sceneViewport->FindWindow();
-
-		sceneViewport->SetViewportSize(HMDResX, HMDResY);
-		if (window.IsValid())
-		{
-			window->SetViewportSizeDrivenByWindow(false);
-			window->FlashWindow();
-		}
-	}
-	else
-	{
-		sceneViewport->SetViewportSize(GSystemResolution.ResX, GSystemResolution.ResY);
-		auto window = sceneViewport->FindWindow();
-
-		if (window.IsValid())
-		{
-			window->SetViewportSizeDrivenByWindow(true);
+			bStereoEnabled = NewEnable;
 		}
 	}
 
-	return Flags.bStereoEnabled;
+	// Uncap fps to enable FPS higher than 62
+	GEngine->bForceDisableFrameRateSmoothing = bStereoEnabled;
+
+	return bStereoEnabled;
 }
 
 void FThreeGlassesHMD::AdjustViewRect(EStereoscopicPass StereoPass, int32& X, int32& Y, uint32& SizeX, uint32& SizeY) const
 {
-	SizeX = HMDResX;
-	SizeY = HMDResY;
 	SizeX = SizeX / 2;
 	if (StereoPass == eSSP_RIGHT_EYE)
 	{
@@ -488,6 +498,9 @@ void FThreeGlassesHMD::RenderMirrorToBackBuffer(class FRHICommandListImmediate& 
 	TShaderMapRef<FScreenVS> vertexShader(shaderMap);
 	TShaderMapRef<FScreenPS> pixelShader(shaderMap);
 
+	static const FName RendererModuleName("Renderer");
+	IRendererModule* RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
+
 	static FGlobalBoundShaderState boundShaderState;
 	SetGlobalBoundShaderState(rhiCmdList, featureLevel, boundShaderState, RendererModule->GetFilterVertexDeclaration().VertexDeclarationRHI, *vertexShader, *pixelShader);
 
@@ -514,9 +527,23 @@ void FThreeGlassesHMD::RenderTexture_RenderThread(class FRHICommandListImmediate
 
 #if PLATFORM_WINDOWS
 
-bool FThreeGlassesHMD::NeedReAllocateViewportRenderTarget(const FViewport &viewport)
+bool FThreeGlassesHMD::NeedReAllocateViewportRenderTarget(const FViewport &Viewport)
 {
 	check(IsInGameThread());
+
+	if (IsStereoEnabled())
+	{
+		FIntPoint RenderTargetSize;
+		RenderTargetSize.X = Viewport.GetRenderTargetTexture()->GetSizeX();
+		RenderTargetSize.Y = Viewport.GetRenderTargetTexture()->GetSizeY();
+
+		uint32 NewSizeX = HMDResX, NewSizeY = HMDResY;
+		CalculateRenderTargetSize(Viewport, NewSizeX, NewSizeY);
+		if (NewSizeX != RenderTargetSize.X || NewSizeY != RenderTargetSize.Y)
+		{
+			return true;
+		}
+	}
 
 	return false;
 }
@@ -535,7 +562,7 @@ void FThreeGlassesHMD::GetEyeRenderParams_RenderThread(const FRenderingComposite
 void FThreeGlassesHMD::SetupViewFamily(FSceneViewFamily& InViewFamily)
 {
 	InViewFamily.EngineShowFlags.MotionBlur = 0;
-	InViewFamily.EngineShowFlags.HMDDistortion = Flags.bHmdDistortion;
+	InViewFamily.EngineShowFlags.HMDDistortion = true;
 	InViewFamily.EngineShowFlags.ScreenPercentage = 1.0f;
 	InViewFamily.EngineShowFlags.StereoRendering = IsStereoEnabled();
 }
@@ -543,16 +570,30 @@ void FThreeGlassesHMD::SetupViewFamily(FSceneViewFamily& InViewFamily)
 void FThreeGlassesHMD::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView)
 {
 	GetCurrentPose(InView.BaseHmdOrientation, InView.BaseHmdLocation);
-	WorldToMetersScale = InView.WorldToMetersScale;
 	InViewFamily.bUseSeparateRenderTarget = ShouldUseSeparateRenderTarget();
 }
 
 void FThreeGlassesHMD::OnBeginPlay(FWorldContext& InWorldContext)
 {
+	if (InWorldContext.GameViewport)
+	{
+		FSceneViewport* sceneViewport = InWorldContext.GameViewport->GetGameViewport();
+		auto window = sceneViewport->FindWindow();
+
+		uint32 NewSizeX = HMDResX, NewSizeY = HMDResY;
+		CalculateRenderTargetSize(*sceneViewport, NewSizeX, NewSizeY);
+		sceneViewport->SetViewportSize(NewSizeX, NewSizeY);
+
+		if (window.IsValid())
+		{
+			window->SetViewportSizeDrivenByWindow(false);
+		}
+	}
+	
 	if (!mCurrentPresent)
 	{
 		mCurrentPresent = new D3D11Present();
-		SDKCompositorInit(hInstance);
+		SDKCompositorInit(hInstance,false);
 	}
 }
 
@@ -604,22 +645,13 @@ void FThreeGlassesHMD::PreRenderViewFamily_RenderThread(FRHICommandListImmediate
 }
 
 FThreeGlassesHMD::FThreeGlassesHMD() :
-	BaseOrientation(FQuat::Identity),
 	DeltaControlRotation(FRotator::ZeroRotator),
-	DeltaControlOrientation(FQuat::Identity),
-	ScreenPercentage(1.0f),
-	AspectRatio(2)
+	DeltaControlOrientation(FQuat::Identity)
 {
-	Flags.Raw = 0;
-	Flags.bHmdDistortion = true;
-	Flags.bHMDEnabled = true;
+	bHMDEnabled = true;
+	bStereoEnabled = false;
 
 	InterpupillaryDistance = 0.1;
-	bVsyncOn = true;
-	bIsMotionPredictionOn = true;
-	MotionPredictionFactor = 1.367f;
-	HFOV = 45;
-	GazePlane = 340.0f;
 
 	bool bHMDConnected = false;
 	bool bServerOpen = false;
@@ -631,8 +663,16 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 	{
 		if (LoadTrackDll())
 		{
-			Sleep(1000);
-			bServerOpen = SZVR_GetHMDConnectionStatus(&bHMDConnected) == 0;
+			for (int i=0;i<50;i++)
+			{
+				Sleep(100);
+				SZVR_GetHMDConnectionStatus(&bHMDConnected);
+				if (bHMDConnected)
+				{
+					bServerOpen = true;
+					break;
+				}
+			}
 		}
 	}
 	
@@ -642,7 +682,6 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 
 		HMDResX = HMDResX - HMDDesktopX;
 		HMDResY = HMDResY - HMDDesktopY;
-		AspectRatio = (float)HMDResX / (float)HMDResY;
 	}	
 	else
 	{
@@ -656,11 +695,8 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 			::MessageBox(0, L"HMDDevice is not Connect!!", L"Error", MB_OK);
 		}
 		
-		Flags.bHMDEnabled = false;
+		bHMDEnabled = false;
 	}
-
-	static const FName RendererModuleName("Renderer");
-	RendererModule = FModuleManager::GetModulePtr<IRendererModule>(RendererModuleName);
 }
 
 FThreeGlassesHMD::~FThreeGlassesHMD()
@@ -693,8 +729,13 @@ bool FThreeGlassesHMD::IsHMDConnected()
 void FThreeGlassesHMD::CalculateRenderTargetSize(const class FViewport& Viewport, uint32& InOutSizeX, uint32& InOutSizeY)
 {
 	check(IsInGameThread());
-	InOutSizeX = HMDResX;
-	InOutSizeY = HMDResY;
+	static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.ScreenPercentage"));
+	float value = CVar->GetValueOnGameThread();
+	if (value > 0.0f)
+	{
+		InOutSizeX = FMath::CeilToInt(InOutSizeX * value / 100.f);
+		InOutSizeY = FMath::CeilToInt(InOutSizeY * value / 100.f);
+	}
 }
 
 bool FThreeGlassesHMD::AllocateRenderTargetTexture(
@@ -707,6 +748,7 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	uint32 numSamples)
 {
 	auto graphicsDevice = reinterpret_cast<ID3D11Device*>(RHIGetNativeDevice());
+	SDKCompositorInitGraphicsResource(sizeX, sizeY);
 	HANDLE handle = SDKCompositorStereoRenderGetRenderTarget();
 	ID3D11Texture2D *D3DTexture = nullptr;
 	HRESULT hr = graphicsDevice->OpenSharedResource(handle, __uuidof(ID3D11Texture2D),
@@ -799,16 +841,6 @@ void FThreeGlassesHMD::UpdateViewport(bool bUseSeparateRenderTarget, const FView
 	}
 }
 
-void FThreeGlassesHMD::SetMotionPredictionFactor(bool bPredictionOn, bool bOpenVsync, float scale, int maxFps)
-{
-	if (scale <= 0)
-		return;
-
-	bIsMotionPredictionOn = bPredictionOn;
-	MotionPredictionFactor = scale;
-	SetVsync(bOpenVsync, maxFps);
-}
-
 bool FThreeGlassesHMD::D3D11Present::Present(int32& InOutSyncInterval)
 {
 	return true;
@@ -816,31 +848,10 @@ bool FThreeGlassesHMD::D3D11Present::Present(int32& InOutSyncInterval)
 
 FThreeGlassesHMD::D3D11Present::~D3D11Present()
 {
-	Sleep(1);
 }
 
 void  FThreeGlassesHMD::D3D11Present::PostPresent()
 {
 	SDKCompositorStereoRenderEnd();
-}
-
-void FThreeGlassesHMD::SetVsync(bool bOpenVsync, float maxFps)
-{
-	bVsyncOn = bOpenVsync;
-	static IConsoleVariable* CVSyncVar = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync"));
-	static IConsoleVariable* CMaxFPSVar = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS"));
-	CMaxFPSVar->Set(maxFps);
-	int32 value = bVsyncOn;
-	if (value != CVSyncVar->GetInt())
-	{
-		CVSyncVar->Set(value);
-		UE_LOG(LogClass, Log, TEXT("Vsync Stat: %d"), value);
-	}
-}
-
-void FThreeGlassesHMD::SetStereoEffectParam(float fov, float gazePlane)
-{
-	HFOV = fov;
-	GazePlane = gazePlane;
 }
 #endif //THREE_GLASSES_SUPPORTED_PLATFORMS
