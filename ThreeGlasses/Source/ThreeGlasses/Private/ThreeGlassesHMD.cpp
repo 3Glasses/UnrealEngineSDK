@@ -574,26 +574,11 @@ void FThreeGlassesHMD::SetupView(FSceneViewFamily& InViewFamily, FSceneView& InV
 }
 
 void FThreeGlassesHMD::OnBeginPlay(FWorldContext& InWorldContext)
-{
-	if (InWorldContext.GameViewport)
-	{
-		FSceneViewport* sceneViewport = InWorldContext.GameViewport->GetGameViewport();
-		auto window = sceneViewport->FindWindow();
-
-		uint32 NewSizeX = HMDResX, NewSizeY = HMDResY;
-		CalculateRenderTargetSize(*sceneViewport, NewSizeX, NewSizeY);
-		sceneViewport->SetViewportSize(NewSizeX, NewSizeY);
-
-		if (window.IsValid())
-		{
-			window->SetViewportSizeDrivenByWindow(false);
-		}
-	}
-	
+{	
 	if (!mCurrentPresent)
 	{
 		mCurrentPresent = new D3D11Present();
-		SDKCompositorInit(hInstance,false);
+		SDKCompositorInit(hInstance,true);
 	}
 }
 
