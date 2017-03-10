@@ -333,7 +333,7 @@ bool FThreeGlassesHMD::IsStereoEnabled() const
 }
 
 /** Helper function for acquiring the appropriate FSceneViewport */
-FSceneViewport* FindSceneViewport()
+static FSceneViewport* FindSceneViewport()
 {
 	if (!GIsEditor)
 	{
@@ -367,9 +367,7 @@ FSceneViewport* FindSceneViewport()
 
 bool FThreeGlassesHMD::EnableStereo(bool stereo)
 {
-	bool NewEnable = (IsHMDEnabled()) ? stereo : false;
-	if (bStereoEnabled == NewEnable)
-		return bStereoEnabled;
+	bStereoDesired = (IsHMDEnabled()) ? stereo : false;
 
 	// Set the viewport to match that of the HMD display
 	FSceneViewport* SceneVP = FindSceneViewport();
@@ -378,31 +376,20 @@ bool FThreeGlassesHMD::EnableStereo(bool stereo)
 		TSharedPtr<SWindow> Window = SceneVP->FindWindow();
 		if (Window.IsValid() && SceneVP->GetViewportWidget().IsValid())
 		{
-			int32 ResX = 2880;
-			int32 ResY = 1440;
+			FVector2D size = SceneVP->FindWindow()->GetSizeInScreen();
 
-			MonitorInfo MonitorDesc;
-			if (GetHMDMonitorInfo(MonitorDesc))
+			if (stereo)
 			{
-				ResX = MonitorDesc.ResolutionX;
-				ResY = MonitorDesc.ResolutionY;
-			}
-			FSystemResolution::RequestResolutionChange(ResX, ResY, EWindowMode::WindowedFullscreen);
-
-			if (NewEnable)
-			{
-				/*			uint32 Width, Height;
-							CalculateRenderTargetSize(*SceneVP, Width, Height);*/
-				SceneVP->SetViewportSize(ResX, ResY);
+				SceneVP->SetViewportSize(HMDResX, HMDResY);
+				Window->SetViewportSizeDrivenByWindow(false);
 			}
 			else
 			{
-				FVector2D size = SceneVP->FindWindow()->GetSizeInScreen();
 				SceneVP->SetViewportSize(size.X, size.Y);
 				Window->SetViewportSizeDrivenByWindow(true);
 			}
 
-			bStereoEnabled = NewEnable;
+			bStereoEnabled = bStereoDesired;
 		}
 	}
 
@@ -578,7 +565,7 @@ void FThreeGlassesHMD::OnBeginPlay(FWorldContext& InWorldContext)
 	if (!mCurrentPresent)
 	{
 		mCurrentPresent = new D3D11Present();
-		SDKCompositorInit(hInstance,true);
+		SDKCompositorInit(hInstance,false);
 	}
 }
 
@@ -587,6 +574,16 @@ void FThreeGlassesHMD::OnEndPlay(FWorldContext& InWorldContext)
 	EnableStereo(false);
 	mCurrentPresent = nullptr;
 	SDKCompositorDestroy();
+}
+
+bool FThreeGlassesHMD::OnStartGameFrame(FWorldContext& WorldContext)
+{
+	if (bStereoEnabled != bStereoDesired)
+	{
+		bStereoEnabled = EnableStereo(bStereoDesired);
+	}
+
+	return false;
 }
 
 void FThreeGlassesHMD::PreRenderView_RenderThread(FRHICommandListImmediate& RHICmdList, FSceneView& View)
@@ -643,7 +640,6 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 
 	// load server process
 	bServerOpen = SZVR_GetHMDConnectionStatus(&bHMDConnected) == 0;
-
 	if(!bServerOpen)
 	{
 		if (LoadTrackDll())
@@ -667,6 +663,7 @@ FThreeGlassesHMD::FThreeGlassesHMD() :
 
 		HMDResX = HMDResX - HMDDesktopX;
 		HMDResY = HMDResY - HMDDesktopY;
+		GSystemResolution.RequestResolutionChange(1280, 640, EWindowMode::Windowed);
 	}	
 	else
 	{
@@ -750,7 +747,7 @@ bool FThreeGlassesHMD::AllocateRenderTargetTexture(
 	renderTargetViewDesc.Format = platformShaderResourceFormat;
 	renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
 	renderTargetViewDesc.Texture2D.MipSlice = 0;
-
+	 
 	// Create the render target view.
 	ID3D11RenderTargetView *RenderTargetView; //< Pointer to our render target view
 	hr = graphicsDevice->CreateRenderTargetView(

@@ -107,6 +107,7 @@ public:
 	*/
 	virtual void OnBeginPlay(FWorldContext& InWorldContext) override;
 	virtual void OnEndPlay(FWorldContext& InWorldContext) override;
+	virtual bool OnStartGameFrame(FWorldContext& WorldContext) override;
 public:
 	/** Constructor */
 	FThreeGlassesHMD();
@@ -163,7 +164,8 @@ private:
 	D3D11Present* mCurrentPresent = NULL;
 private:
 	bool  bHMDEnabled;
-	bool  bStereoEnabled;
+	bool  bStereoEnabled = false;
+	bool  bStereoDesired = false;
 
 	float InterpupillaryDistance;
 
