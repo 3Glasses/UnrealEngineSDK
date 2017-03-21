@@ -825,6 +825,9 @@ void FThreeGlassesHMD::UpdateViewport(bool bUseSeparateRenderTarget, const FView
 
 bool FThreeGlassesHMD::D3D11Present::Present(int32& InOutSyncInterval)
 {
+#if ENGINE_MINOR_VERSION <= 13
+	SDKCompositorStereoRenderEnd();
+#endif
 	return true;
 }
 
