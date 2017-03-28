@@ -20,11 +20,13 @@ public:
 	bool BottonState[ButtonNum] = { 0 };
 	uint8 AxisState[4] = { 0 };
 	uint8 TriggerState[2] = { 0 };
+	SZVR::MemoryManager ShareMemory;
 
 	F3GlassesController(const TSharedRef< FGenericApplicationMessageHandler >& InMessageHandler)
 		: MessageHandler(InMessageHandler)
 	{
 		IModularFeatures::Get().RegisterModularFeature(GetModularFeatureName(), this);
+		ShareMemory.InitIfExist();
 	}
 
 	virtual void SetMessageHandler(const TSharedRef< FGenericApplicationMessageHandler >& InMessageHandler) override
@@ -49,11 +51,11 @@ public:
 		{
 		case EControllerHand::Left:
 			DeviceOrientation = FQuat(RotData[0], RotData[1], RotData[2], RotData[3]);
-			OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4])*0.1f;
+			OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1])*0.1f;
 			break;
 		case EControllerHand::Right:
 			DeviceOrientation = FQuat(RotData[4], RotData[5], RotData[6], RotData[7]);
-			OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1])*0.1f;	
+			OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4])*0.1f;
 			break;
 		default:
 			return false;
@@ -102,6 +104,13 @@ public:
 
 	virtual void SetHapticFeedbackValues(int32 UnrealControllerId, int32 Hand, const FHapticFeedbackValues& Values) override
 	{
+		if (Hand>=0&&Hand<2)
+		{
+			uint16 data[2] = { 0 };
+			ShareMemory.LoadDataMemory(SZVR::eWAND_VIBRATOR, data);
+			data[Hand] = Values.Amplitude;
+			ShareMemory.SaveDataMemory(SZVR::eWAND_VIBRATOR, data);
+		}
 	}
 
 	virtual void SendControllerEvents() override

@@ -71,4 +71,9 @@ public:
 	* @return 	It returns true it success, else value is false*/
 	UFUNCTION(BlueprintCallable, Category = "ThreeGlassesVR")
 	static bool GetWandStick(int32& LeftX, int32& LeftY, int32& RightX, int32& RightY);
+
+	/**
+	* Set Hapitc Feedback */
+	UFUNCTION(BlueprintCallable, Category = "ThreeGlassesVR")
+	static void SetWandHapic(int32 Hand, int32 Frequency,int32 Amplitude);
 };

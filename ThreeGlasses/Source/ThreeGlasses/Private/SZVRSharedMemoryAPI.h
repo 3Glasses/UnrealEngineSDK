@@ -117,6 +117,7 @@ namespace SZVR
 
 #endif
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -134,7 +135,7 @@ It returns true hmd is connection otherwise it returns false
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDConnectionStatus(bool *result);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDConnectionStatus(bool *result);
 
 /*
 [Functionality]
@@ -152,7 +153,7 @@ Type: float[4]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDRotate(float result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDRotate(float result[]);
 
 /*
 [Functionality]
@@ -169,7 +170,7 @@ Type: float[3]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDPos(float result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDPos(float result[]);
 
 /*
 [Functionality]
@@ -185,7 +186,7 @@ Type: float[2]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDTouchpad(uint8_t result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDTouchpad(uint8_t result[]);
 
 /*
 [Functionality]
@@ -199,7 +200,7 @@ Type: bool*
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDPresent(bool *result);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDPresent(bool *result);
 
 /*
 [Functionality]
@@ -215,7 +216,7 @@ Type: bool*
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDMenuButton(bool *result);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDMenuButton(bool *result);
 
 /*
 [Functionality]
@@ -231,7 +232,7 @@ Type: bool*
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDExitButton(bool *result);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDExitButton(bool *result);
 
 /*
 [Functionality]
@@ -245,7 +246,7 @@ Type: char[64]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDDevName(char *name);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDDevName(char *name);
 
 /*
 [Functionality]
@@ -259,7 +260,7 @@ Type: char[64]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDDevSerialNumber(char *serialNumber);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDDevSerialNumber(char *serialNumber);
 
 /*
 [Functionality]
@@ -273,7 +274,7 @@ Type: uint8_t*
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetHMDDevIPD(uint8_t *value);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetHMDDevIPD(uint8_t *value);
 
 /*
 [Functionality]
@@ -287,7 +288,7 @@ Type: char[64]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetWandDevSerialNumber(char *serial);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetWandDevSerialNumber(char *serial);
 
 
 /*
@@ -305,7 +306,7 @@ It returns true wand is connection otherwise it returns false
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetWandConnectionStatus(bool status[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetWandConnectionStatus(bool status[]);
 
 /*
 [Functionality]
@@ -328,7 +329,7 @@ Type: float[6]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetWandRotate(float result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetWandRotate(float result[]);
 
 /*
 [Functionality]
@@ -350,7 +351,7 @@ Type: float[6]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetWandPos(float result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetWandPos(float result[]);
 
 /*
 [Functionality]
@@ -381,7 +382,7 @@ second wand
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetWandButton(bool result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetWandButton(bool result[]);
 
 /*
 [Functionality]
@@ -397,7 +398,7 @@ Type: uint8_t[2]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetWandTriggerProcess(uint8_t result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetWandTriggerProcess(uint8_t result[]);
 
 /*
 [Functionality]
@@ -415,7 +416,22 @@ Type: uint8_t[4]
 Type: int
 It returns 0 it success, othe value is false
 */
-SZVR_EXPORT uint32_t SZVR_GetWandStick(uint8_t result[]);
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetWandStick(uint8_t result[]);
+
+/*
+[Functionality]
+Get camera connection status.
+
+[Parameters]
+result
+Type: bool*
+It returns true camera is connection otherwise it returns false
+
+[Return value]
+Type: int
+It returns 0 it success, othe value is false
+*/
+__declspec(deprecated("API is Old")) SZVR_EXPORT uint32_t SZVR_GetCameraConnectionStatus(bool *result);
 
 #ifdef __cplusplus  
 }
@@ -424,5 +440,6 @@ SZVR_EXPORT uint32_t SZVR_GetWandStick(uint8_t result[]);
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(_WIN64) || defined(WINAPI_FAMILY)
 #undef SZVR_EXPORT
 #endif
+
 
 #endif

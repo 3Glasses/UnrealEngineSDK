@@ -162,7 +162,7 @@ void FThreeGlassesHMD::GetCurrentPose(FQuat& CurrentHmdOrientation, FVector& Cur
 		FVector loc(0, 0, 0);
 		if (SZVR_GetHMDPos(&loc.X) == 0)
 		{
-			CurrentHmdPosition = FVector(-loc.Z, loc.X, loc.Y)/7.f;
+			CurrentHmdPosition = FVector(-loc.Z, loc.X, loc.Y)*0.1f;
 			CurrentHmdPosition = ClampVector(CurrentHmdPosition, -FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX), FVector(HALF_WORLD_MAX, HALF_WORLD_MAX, HALF_WORLD_MAX));
 		}
 	}

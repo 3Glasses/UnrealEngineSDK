@@ -3,9 +3,12 @@
 #include "ThreeGlassesHMD.h"
 #include "ThreeGlassBPFunctionLibrary.h"
 
+static SZVR::MemoryManager ShareMemory;
+
 UThreeGlassBPFunctionLibrary::UThreeGlassBPFunctionLibrary(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
+	//ShareMemory.InitIfExist();
 }
 
 FThreeGlassesHMD* GetThreeGlassesHMD()
@@ -121,4 +124,15 @@ bool UThreeGlassBPFunctionLibrary::GetWandStick(int32& LeftX, int32& LeftY, int3
 	RightX = ret[2];
 	RightY = ret[3];
 	return result;
+}
+
+void UThreeGlassBPFunctionLibrary::SetWandHapic(int32 Hand, int32 Frequency, int32 Amplitude)
+{
+	if (Hand >= 0 && Hand < 2)
+	{
+		uint16 data[2] = { 0 };
+		ShareMemory.LoadDataMemory(SZVR::eWAND_VIBRATOR, data);
+		data[Hand] = Amplitude;
+		ShareMemory.SaveDataMemory(SZVR::eWAND_VIBRATOR, data);
+	}
 }
