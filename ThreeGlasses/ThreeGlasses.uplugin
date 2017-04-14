@@ -1,7 +1,7 @@
 {
 	"FileVersion" : 3,
 	"Version" : 1,
-	"VersionName" : "0.8.6",
+	"VersionName" : "0.9.0",
 	"FriendlyName" : "Three Glasses",
 	"Description" : "Support for the Three Glasses head mounted display",
 	"Category" : "Virtual Reality",
