@@ -107,10 +107,7 @@ bool UThreeGlassBPFunctionLibrary::IsHMDMenuButtonDown()
 
 bool UThreeGlassBPFunctionLibrary::GetWandButton(TArray<bool>& ButtonStatus)
 {
-	if (ButtonStatus.Num() != 12)
-	{
-		return false;
-	}
+	ButtonStatus.SetNum(12);
 
 	return SZVR_GetWandButton(ButtonStatus.GetData()) == 0;
 }
