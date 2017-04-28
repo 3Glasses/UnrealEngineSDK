@@ -8,7 +8,6 @@ static SZVR::MemoryManager ShareMemory;
 UThreeGlassBPFunctionLibrary::UThreeGlassBPFunctionLibrary(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
-	//ShareMemory.InitIfExist();
 }
 
 FThreeGlassesHMD* GetThreeGlassesHMD()
@@ -51,7 +50,7 @@ void UThreeGlassBPFunctionLibrary::GetHMDOrientationAndPosition(FQuat& CurrentOr
 	}
 }
 
-bool UThreeGlassBPFunctionLibrary::GetControllerOrientationAndPosition(const int32 ControllerIndex, const EControllerHand DeviceHand, FRotator& OutOrientation, FVector& OutPosition) 
+bool UThreeGlassBPFunctionLibrary::GetControllerOrientationAndPosition(const int32 ControllerIndex,  FRotator& OutOrientation, FVector& OutPosition) 
 {
 	FQuat DeviceOrientation = FQuat::Identity;
 	float PosData[6] = { 0 };
@@ -59,13 +58,13 @@ bool UThreeGlassBPFunctionLibrary::GetControllerOrientationAndPosition(const int
 	float RotData[8] = { 0 };
 	SZVR_GetWandRotate(RotData);
 
-	switch (DeviceHand)
+	switch (ControllerIndex)
 	{
-	case EControllerHand::Left:
+	case 0:
 		DeviceOrientation = FQuat(RotData[0], RotData[1], RotData[2], RotData[3]);
 		OutPosition = FVector(-PosData[2], -PosData[0], -PosData[1]) *0.1f;
 		break;
-	case EControllerHand::Right:
+	case 1:
 		DeviceOrientation = FQuat(RotData[4], RotData[5], RotData[6], RotData[7]);
 		OutPosition = FVector(-PosData[5], -PosData[3], -PosData[4]) *0.1f;
 		break;
@@ -105,22 +104,33 @@ bool UThreeGlassBPFunctionLibrary::IsHMDMenuButtonDown()
 	return result;
 }
 
-bool UThreeGlassBPFunctionLibrary::GetWandButton(TArray<bool>& ButtonStatus)
+bool UThreeGlassBPFunctionLibrary::IsControllerButtonPressed(int ControllerIndex, EControllerButton eButton)
 {
-	ButtonStatus.SetNum(12);
+	bool ButtonStatus[12] = { 0 };
+	if (SZVR_GetWandButton(ButtonStatus) == 0)
+	{
+		return ButtonStatus[ControllerIndex * 6 + eButton];
+	}
 
-	return SZVR_GetWandButton(ButtonStatus.GetData()) == 0;
+	return false;
 }
 
-bool UThreeGlassBPFunctionLibrary::GetWandStick(int32& LeftX, int32& LeftY, int32& RightX, int32& RightY)
+void UThreeGlassBPFunctionLibrary::GetControllerStick(int32 ControllerIndex, int32& X, int32& Y)
 {
-	uint8_t ret[4] = {0};
-	bool result = SZVR_GetWandStick(ret) == 0;
-	LeftX = ret[0];
-	LeftY = ret[1];
-	RightX = ret[2];
-	RightY = ret[3];
-	return result;
+	uint8_t ret[4] = { 0 };
+	if (SZVR_GetWandStick(ret) == 0)
+	{
+		if (ControllerIndex==0)
+		{
+			X = ret[0];
+			Y = ret[1];
+		}
+		else if (ControllerIndex == 1)
+		{
+			X = ret[2];
+			Y = ret[3];
+		}
+	}
 }
 
 void UThreeGlassBPFunctionLibrary::SetWandHapic(int32 Hand, int32 Frequency, int32 Amplitude)
