@@ -89,7 +89,7 @@ namespace SZVR
 	{
 	public:
 		MemoryManager();
-		virtual ~MemoryManager();
+		~MemoryManager();
 
 		struct ShareMemoryObject
 		{
@@ -100,7 +100,6 @@ namespace SZVR
 		};
 
 		bool InitIfExist();
-		BOOL ReleaseMemoryManager();
 
 		bool SaveDataMemory(eMemoryGuidFlag eFlag, void * data);
 		bool LoadDataMemory(eMemoryGuidFlag eFlag, void * data);
